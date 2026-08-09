@@ -78,3 +78,46 @@ Connect external systems (GitHub, GitLab, Slack, Notion, Linear, Google Drive). 
   (`temperature` 0–2, `max_tokens` 64–16384) are validated server-side.
 - Access tokens carry the refresh-session family (`sid`). Revoking a session invalidates
   its access tokens immediately rather than at expiry.
+
+## Chat citations and grounding (Phase 3)
+
+The chat endpoints above gain optional retrieval grounding: passing `knowledge_base_id`
+grounds the request in that knowledge base. Passages are retrieved with the configured
+embedding provider, injected as delimited **untrusted** reference data (never as
+instructions), and returned as citations. Streaming sends `citation` SSE events before
+`token` events. Citations are persisted as `citation` message parts on the assistant
+message. The knowledge base must belong to the caller's organization (404 otherwise).
+
+## Knowledge base endpoints (Phase 3)
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/v1/knowledge-bases` | Create a knowledge base |
+| `GET /api/v1/knowledge-bases` | List the organization knowledge bases |
+| `GET /api/v1/knowledge-bases/{id}` | Retrieve one knowledge base |
+| `DELETE /api/v1/knowledge-bases/{id}` | Delete a knowledge base and its documents/chunks |
+| `GET /api/v1/knowledge-bases/{id}/documents` | List documents with ingestion status |
+| `POST /api/v1/knowledge-bases/{id}/documents` | Register governed metadata (source, license, SHA-256) |
+| `POST /api/v1/knowledge-bases/{id}/documents/upload` | Multipart upload: quarantine, hash, register, dispatch ingestion |
+| `POST /api/v1/knowledge-bases/{id}/search` | Semantic search; returns attributed citations |
+
+### Upload contract
+
+- Multipart form: `file` (required), `source` (required, ≤512 chars), `license`
+  (required, ≤256 chars), optional `language`.
+- Allowed content types: `text/plain`, `text/markdown`, `application/pdf`,
+  `application/json`, `text/csv`. Only plain text and Markdown are parsed at this
+  milestone; other accepted types ingest to an explicit `failed` status with a
+  `failure_reason` until their parsers land.
+- File bytes must be non-empty and ≤ 25 MiB; the hash is computed server-side and
+  verified again by the worker before parsing. Duplicate content in the same knowledge
+  base returns 409.
+- Uploaded bytes are written to quarantined object storage under a server-generated
+  key — browser/clients never receive object contents back.
+
+### Ingestion lifecycle
+
+`pending → validating → parsing → chunking → embedding → ready` (any stage can land in
+`failed` with a `failure_reason`). With `JAT_INGESTION_DISPATCHER=inline` the pipeline
+runs synchronously in the upload request; with `redis` it is processed by workers
+started via `python -m jat_api.ingestion.worker`.

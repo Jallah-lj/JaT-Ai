@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from uuid import UUID
 
 from sqlalchemy import select
@@ -16,6 +17,7 @@ async def finalize_generation(
     generation_id: UUID,
     status: str,
     text: str | None = None,
+    citations: list[dict[str, object]] | None = None,
 ) -> None:
     """Finalize only streaming messages using a session independent of request cancellation."""
     async with session_factory() as session:
@@ -27,5 +29,14 @@ async def finalize_generation(
         if status == "complete" and text is not None:
             session.add(MessagePart(message_id=message.id, position=0, kind="text", content=text))
             message.output_tokens = len(text.split())
+            for position, citation in enumerate(citations or [], start=1):
+                session.add(
+                    MessagePart(
+                        message_id=message.id,
+                        position=position,
+                        kind="citation",
+                        content=json.dumps(citation),
+                    )
+                )
         message.status = status
         await session.commit()

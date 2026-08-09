@@ -39,6 +39,16 @@ class Settings(BaseSettings):
     model_context_length: int = Field(default=8192, ge=256, le=1_000_000)
     model_max_tokens: int = Field(default=1024, ge=1, le=16384)
     model_temperature: float = Field(default=0.2, ge=0.0, le=2.0)
+    # Phase 3: governed ingestion and retrieval.
+    embedding_provider: str = "deterministic"
+    object_store_dir: str = ".jat-data/objects"
+    ingestion_dispatcher: Literal["inline", "redis", "local"] = "inline"
+    ingestion_queue: str = "jat:ingestion"
+    upload_max_bytes: int = Field(default=26_214_400, ge=1_024, le=52_428_800)
+    rag_chunk_max_chars: int = Field(default=1000, ge=100, le=8000)
+    rag_chunk_overlap: int = Field(default=200, ge=0, le=4000)
+    rag_search_limit: int = Field(default=8, ge=1, le=50)
+    rag_max_citations: int = Field(default=5, ge=0, le=20)
 
     @field_validator("cors_origins", mode="before")
     @classmethod
@@ -58,6 +68,8 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def secure_deployment_settings(self) -> Settings:
+        if self.rag_chunk_overlap >= self.rag_chunk_max_chars:
+            raise ValueError("JAT_RAG_CHUNK_OVERLAP must be smaller than JAT_RAG_CHUNK_MAX_CHARS")
         secret = self.jwt_secret.get_secret_value()
         if self.environment in {"staging", "production"}:
             if len(secret) < 32 or secret.startswith("replace-with-"):

@@ -13,17 +13,32 @@ from starlette.responses import JSONResponse, Response
 logger = structlog.get_logger(__name__)
 
 
+_UPLOAD_PATH_SUFFIX = "/documents/upload"
+_MULTIPART_OVERHEAD_BYTES = 1024 * 1024
+
+
 class RequestContextMiddleware(BaseHTTPMiddleware):
     """Bind a request ID, reject oversized bodies, and add baseline security headers."""
 
-    def __init__(self, app: object, max_request_bytes: int) -> None:
+    def __init__(self, app: object, max_request_bytes: int, upload_max_bytes: int) -> None:
         super().__init__(app)  # type: ignore[arg-type]
         self.max_request_bytes = max_request_bytes
+        self.upload_max_bytes = upload_max_bytes
+
+    def _effective_limit(self, request: Request) -> int:
+        # Document uploads are bounded by the ingestion policy instead of the
+        # narrow JSON body limit; the endpoint re-validates the exact byte count.
+        content_type = request.headers.get("content-type", "")
+        if request.url.path.endswith(_UPLOAD_PATH_SUFFIX) and content_type.startswith(
+            "multipart/form-data"
+        ):
+            return self.upload_max_bytes + _MULTIPART_OVERHEAD_BYTES
+        return self.max_request_bytes
 
     async def dispatch(self, request: Request, call_next: object) -> Response:
         request_id = request.headers.get("X-Request-ID") or str(uuid4())
         content_length = request.headers.get("content-length")
-        if content_length is not None and int(content_length) > self.max_request_bytes:
+        if content_length is not None and int(content_length) > self._effective_limit(request):
             return JSONResponse(
                 status_code=413,
                 content={
