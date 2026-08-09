@@ -20,6 +20,10 @@ class CreateConversationRequest(BaseModel):
     model: str | None = Field(default=None, max_length=120)
 
 
+class UpdateConversationRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+
+
 class MessageResponse(BaseModel):
     id: UUID
     role: str
@@ -105,6 +109,38 @@ async def get_conversation(
     )
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
+    return ConversationResponse.model_validate(conversation, from_attributes=True)
+
+
+@router.patch("/{conversation_id}", response_model=ConversationResponse)
+async def update_conversation(
+    conversation_id: UUID,
+    payload: UpdateConversationRequest,
+    request: Request,
+    user: User = Depends(current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> ConversationResponse:
+    organization_id = await organization_for_user(db, user)
+    conversation = await db.scalar(
+        select(Conversation).where(
+            Conversation.id == conversation_id,
+            Conversation.organization_id == organization_id,
+            Conversation.archived_at.is_(None),
+        )
+    )
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    conversation.title = payload.title.strip()
+    conversation.updated_at = datetime.now().astimezone()
+    await write_audit_log(
+        db,
+        action="conversation.update",
+        resource_type="conversation",
+        actor_user_id=user.id,
+        request_id=request.headers.get("X-Request-ID"),
+    )
+    await db.commit()
+    await db.refresh(conversation)
     return ConversationResponse.model_validate(conversation, from_attributes=True)
 
 

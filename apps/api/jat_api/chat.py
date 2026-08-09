@@ -135,6 +135,24 @@ async def store_citation_parts(
         )
 
 
+def title_from_content(content: str, *, max_length: int = 60) -> str:
+    """Derive a short conversation title from the first user message."""
+    cleaned = " ".join(content.strip().split())
+    if not cleaned:
+        return "New conversation"
+    if len(cleaned) <= max_length:
+        return cleaned
+    truncated = cleaned[: max_length - 1].rsplit(" ", 1)[0]
+    return f"{truncated or cleaned[: max_length - 1]}…"
+
+
+async def maybe_auto_title(conversation: Conversation, content: str) -> None:
+    """Give untitled chats a real title once the user sends their first message."""
+    current = (conversation.title or "").strip().lower()
+    if current in {"", "new conversation", "new chat"}:
+        conversation.title = title_from_content(content)
+
+
 def generation_request(
     request: Request, conversation: Conversation, history: list[ChatMessage]
 ) -> GenerationRequest:
@@ -156,6 +174,7 @@ async def chat(
     db: AsyncSession = Depends(get_db_session),
 ) -> ChatResponse:
     conversation = await owned_conversation(db, user, payload.conversation_id)
+    await maybe_auto_title(conversation, payload.content)
     citations = await retrieve_citations(request, db, user, payload)
     user_message = await store_message(
         db, conversation_id=conversation.id, role="user", content=payload.content
@@ -194,6 +213,7 @@ async def chat_stream(
     db: AsyncSession = Depends(get_db_session),
 ) -> StreamingResponse:
     conversation = await owned_conversation(db, user, payload.conversation_id)
+    await maybe_auto_title(conversation, payload.content)
     citations = await retrieve_citations(request, db, user, payload)
     await store_message(db, conversation_id=conversation.id, role="user", content=payload.content)
     history = grounded_history(await history_for(db, conversation.id), citations)

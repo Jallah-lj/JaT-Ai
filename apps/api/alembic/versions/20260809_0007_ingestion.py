@@ -1,15 +1,15 @@
 """Add quarantined upload metadata and chunk embeddings for Phase 3 ingestion.
 
-Revision ID: 20260809_0006
-Revises: 20260809_0005
+Revision ID: 20260809_0007
+Revises: 20260809_0006
 """
 
 import sqlalchemy as sa
 
 from alembic import op
 
-revision = "20260809_0006"
-down_revision = "20260809_0005"
+revision = "20260809_0007"
+down_revision = "20260809_0006"
 branch_labels = None
 depends_on = None
 

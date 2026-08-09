@@ -87,8 +87,8 @@ def test_memory_text_is_bounded_and_non_empty() -> None:
 
 def test_password_change_enforces_minimum_length() -> None:
     with pytest.raises(ValidationError):
-        PasswordChange(current_password="old", new_password="too-short")
-    assert PasswordChange(current_password="old", new_password="a-long-enough-password")
+        PasswordChange(current_password="old", new_password="short")
+    assert PasswordChange(current_password="old", new_password="long-enough")
 
 
 def test_profile_update_validates_email_and_name_bounds() -> None:
@@ -116,3 +116,14 @@ def test_cors_origins_accept_comma_separated_and_json_forms() -> None:
     assert comma.cors_origins == ["http://a.test", "http://b.test"]
     json_form = Settings(environment="testing", cors_origins='["http://c.test"]')
     assert json_form.cors_origins == ["http://c.test"]
+
+
+def test_chat_title_helper_truncates_cleanly() -> None:
+    from jat_api.chat import title_from_content
+
+    assert title_from_content("  Hello   world  ") == "Hello world"
+    assert title_from_content("") == "New conversation"
+    long = "word " * 40
+    titled = title_from_content(long, max_length=40)
+    assert titled.endswith("…")
+    assert len(titled) <= 40

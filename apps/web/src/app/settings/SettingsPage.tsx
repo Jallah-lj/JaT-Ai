@@ -1,6 +1,8 @@
 import { ReactElement, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ApiError,
+  integrationsApi,
+  MIN_PASSWORD_LENGTH,
   settingsApi,
   type Accent,
   type Density,
@@ -9,6 +11,7 @@ import {
   type Preferences,
   type PreferencesPatch,
   type Profile,
+  type ProviderCatalogItem,
   type SessionSummary,
   type Theme,
   type UsageStats,
@@ -16,13 +19,14 @@ import {
 } from "../../lib/api";
 import { Row, SegmentedControl, Section, Toggle } from "./fields";
 
-type TabId = "general" | "appearance" | "chat" | "memory" | "account" | "data";
+type TabId = "general" | "appearance" | "chat" | "memory" | "integrations" | "account" | "data";
 
 const TABS: { id: TabId; label: string; icon: string }[] = [
   { id: "general", label: "General", icon: "◎" },
   { id: "appearance", label: "Appearance", icon: "◐" },
   { id: "chat", label: "Chat", icon: "✦" },
   { id: "memory", label: "Memory", icon: "◈" },
+  { id: "integrations", label: "Integrations", icon: "⧉" },
   { id: "account", label: "Account", icon: "⬡" },
   { id: "data", label: "Data controls", icon: "⛁" },
 ];
@@ -51,22 +55,29 @@ export type SettingsPageProps = {
   token: string;
   user: User;
   preferences: Preferences;
+  initialTab?: string;
   onPreferencesChange: (preferences: Preferences) => void;
   onProfileChange: (user: User) => void;
   onClose: () => void;
   onSignedOut: () => void;
 };
 
+function resolveTab(value: string | undefined): TabId {
+  const match = TABS.find((tab) => tab.id === value);
+  return match?.id ?? "general";
+}
+
 export function SettingsPage({
   token,
   user,
   preferences,
+  initialTab,
   onPreferencesChange,
   onProfileChange,
   onClose,
   onSignedOut,
 }: SettingsPageProps): ReactElement {
-  const [tab, setTab] = useState<TabId>("general");
+  const [tab, setTab] = useState<TabId>(() => resolveTab(initialTab));
   const [status, setStatus] = useState<{ kind: "saved" | "error"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -110,6 +121,10 @@ export function SettingsPage({
   useEffect(() => {
     panelRef.current?.focus();
   }, []);
+
+  useEffect(() => {
+    if (initialTab) setTab(resolveTab(initialTab));
+  }, [initialTab]);
 
   return (
     <div
@@ -180,6 +195,9 @@ export function SettingsPage({
               onPreferencesChange={onPreferencesChange}
               announce={announce}
             />
+          )}
+          {tab === "integrations" && (
+            <IntegrationsTab token={token} announce={announce} />
           )}
           {tab === "account" && (
             <AccountTab token={token} announce={announce} onSignedOut={onSignedOut} />
@@ -658,6 +676,221 @@ function MemoryTab({
   );
 }
 
+// ------------------------------------------------------------------ Integrations
+
+function IntegrationsTab({
+  token,
+  announce,
+}: {
+  token: string;
+  announce: (kind: "saved" | "error", text: string) => void;
+}): ReactElement {
+  const [catalog, setCatalog] = useState<ProviderCatalogItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [connecting, setConnecting] = useState<string | null>(null);
+  const [tokenDraft, setTokenDraft] = useState("");
+  const [labelDraft, setLabelDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    void integrationsApi
+      .catalog(token)
+      .then(setCatalog)
+      .catch(() => setCatalog([]))
+      .finally(() => setLoading(false));
+  }, [token]);
+
+  useEffect(load, [load]);
+
+  async function connect(provider: string): Promise<void> {
+    if (tokenDraft.trim().length < 8) {
+      announce("error", "Paste an access token of at least 8 characters");
+      return;
+    }
+    setBusy(true);
+    try {
+      const result = await integrationsApi.connect(token, {
+        provider,
+        access_token: tokenDraft.trim(),
+        display_label: labelDraft.trim() || undefined,
+      });
+      setTokenDraft("");
+      setLabelDraft("");
+      setConnecting(null);
+      load();
+      announce("saved", result.detail || "Connected");
+    } catch (caught) {
+      announce("error", errorMessage(caught, "Could not connect that integration"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function disconnect(provider: string, name: string): Promise<void> {
+    if (!confirm(`Disconnect ${name}? JaT will stop using that account.`)) return;
+    try {
+      const result = await integrationsApi.disconnect(token, provider);
+      load();
+      announce("saved", result.detail || "Disconnected");
+    } catch (caught) {
+      announce("error", errorMessage(caught, "Could not disconnect"));
+    }
+  }
+
+  async function verify(provider: string): Promise<void> {
+    try {
+      const result = await integrationsApi.verify(token, provider);
+      load();
+      announce("saved", result.detail || "Verified");
+    } catch (caught) {
+      announce("error", errorMessage(caught, "Could not verify that connection"));
+    }
+  }
+
+  return (
+    <>
+      <Section
+        title="Connected systems"
+        description="Link GitHub and other tools so JaT can work across your stack. Tokens are stored hashed and never shown again."
+      >
+        {loading ? (
+          <p className="empty-note">Loading integrations…</p>
+        ) : (
+          <ul className="integration-list">
+            {catalog.map((item) => (
+              <li key={item.id} className={item.connected ? "connected" : ""}>
+                <div className="integration-head">
+                  <div className="integration-icon" aria-hidden="true">
+                    {item.icon === "github"
+                      ? "⌥"
+                      : item.icon === "gitlab"
+                        ? "⑂"
+                        : item.icon === "slack"
+                          ? "#"
+                          : item.icon === "notion"
+                            ? "N"
+                            : item.icon === "linear"
+                              ? "L"
+                              : "☁"}
+                  </div>
+                  <div>
+                    <strong>
+                      {item.name}
+                      {item.connected && <span className="badge">Connected</span>}
+                    </strong>
+                    <p>{item.description}</p>
+                    {item.connected && item.connection && (
+                      <p className="field-hint">
+                        Token ending ···{item.connection.secret_hint}
+                        {item.connection.display_label
+                          ? ` · ${item.connection.display_label}`
+                          : ""}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {connecting === item.id ? (
+                  <div className="integration-connect-form">
+                    <Row
+                      label="Access token"
+                      htmlFor={`token-${item.id}`}
+                      hint={`Scopes: ${item.scopes_hint}`}
+                      stacked
+                    >
+                      <input
+                        id={`token-${item.id}`}
+                        type="password"
+                        autoComplete="off"
+                        value={tokenDraft}
+                        placeholder="Paste personal access token"
+                        onChange={(event) => setTokenDraft(event.target.value)}
+                      />
+                    </Row>
+                    <Row label="Label (optional)" htmlFor={`label-${item.id}`} stacked>
+                      <input
+                        id={`label-${item.id}`}
+                        value={labelDraft}
+                        placeholder="e.g. Work account"
+                        onChange={(event) => setLabelDraft(event.target.value)}
+                      />
+                    </Row>
+                    <div className="row-actions">
+                      <button
+                        className="primary-action"
+                        disabled={busy || tokenDraft.trim().length < 8}
+                        onClick={() => void connect(item.id)}
+                      >
+                        {busy ? "Connecting…" : item.connected ? "Update token" : "Connect"}
+                      </button>
+                      <button
+                        className="ghost-action"
+                        onClick={() => {
+                          setConnecting(null);
+                          setTokenDraft("");
+                          setLabelDraft("");
+                        }}
+                      >
+                        Cancel
+                      </button>
+                      <a
+                        className="ghost-action link-action"
+                        href={item.docs_url}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Get a token ↗
+                      </a>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="row-actions">
+                    {item.connected ? (
+                      <>
+                        <button className="ghost-action" onClick={() => void verify(item.id)}>
+                          Verify
+                        </button>
+                        <button
+                          className="ghost-action"
+                          onClick={() => {
+                            setConnecting(item.id);
+                            setTokenDraft("");
+                            setLabelDraft(item.connection?.display_label ?? "");
+                          }}
+                        >
+                          Update
+                        </button>
+                        <button
+                          className="danger-action"
+                          onClick={() => void disconnect(item.id, item.name)}
+                        >
+                          Disconnect
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        className="primary-action"
+                        onClick={() => {
+                          setConnecting(item.id);
+                          setTokenDraft("");
+                          setLabelDraft("");
+                        }}
+                      >
+                        Connect
+                      </button>
+                    )}
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </Section>
+    </>
+  );
+}
+
 // ------------------------------------------------------------------ Account
 
 function AccountTab({
@@ -685,9 +918,11 @@ function AccountTab({
   useEffect(loadSessions, [loadSessions]);
 
   const mismatch = confirmPassword.length > 0 && newPassword !== confirmPassword;
-  const tooShort = newPassword.length > 0 && newPassword.length < 12;
+  const tooShort = newPassword.length > 0 && newPassword.length < MIN_PASSWORD_LENGTH;
   const canSubmit =
-    currentPassword.length > 0 && newPassword.length >= 12 && newPassword === confirmPassword;
+    currentPassword.length > 0 &&
+    newPassword.length >= MIN_PASSWORD_LENGTH &&
+    newPassword === confirmPassword;
 
   async function changePassword(): Promise<void> {
     setBusy(true);
@@ -741,7 +976,12 @@ function AccountTab({
             onChange={(event) => setCurrentPassword(event.target.value)}
           />
         </Row>
-        <Row label="New password" htmlFor="new-password" hint="At least 12 characters." stacked>
+        <Row
+          label="New password"
+          htmlFor="new-password"
+          hint={`At least ${MIN_PASSWORD_LENGTH} characters.`}
+          stacked
+        >
           <input
             id="new-password"
             type="password"
@@ -750,7 +990,9 @@ function AccountTab({
             onChange={(event) => setNewPassword(event.target.value)}
             aria-invalid={tooShort}
           />
-          {tooShort && <p className="field-error">Use at least 12 characters.</p>}
+          {tooShort && (
+            <p className="field-error">Use at least {MIN_PASSWORD_LENGTH} characters.</p>
+          )}
         </Row>
         <Row label="Confirm new password" htmlFor="confirm-password" stacked>
           <input
