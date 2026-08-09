@@ -31,6 +31,27 @@ JAT_MODEL_ENDPOINT=http://127.0.0.1:11434
 JAT_MODEL_NAME=<your-installed-model>
 ```
 
+When an endpoint is configured, `GET /api/v1/settings/models` enumerates the
+models actually installed on the Ollama server (via `/api/tags`) so each
+conversation can select a real model. Discovery is best-effort: if Ollama is
+unreachable the catalog still advertises a single selectable Ollama entry.
+
+### Per-conversation model selection
+
+Each conversation pins a `model` (set at creation, changeable via
+`PATCH /api/v1/conversations/{id}` with `{ "model": ... }`). Chat orchestration
+sends `conversation.model` to the provider, so switching a conversation's model
+changes which Ollama model serves its next reply without altering history.
+
+### Operator default system prompt
+
+```env
+JAT_DEFAULT_SYSTEM_PROMPT=You are JaT, a precise assistant.
+```
+
+Applied only when a user has no system prompt of their own. A user's explicit
+prompt always takes precedence.
+
 JaT sends chat-style requests only through the provider contract. Do not expose model endpoints, credentials, or infrastructure access to the browser.
 
 ## Adding a provider

@@ -48,12 +48,15 @@ function authorized<T>(path: string, token: string, init: RequestInit = {}): Pro
 
 export const conversationApi = {
   list: (token: string) => authorized<Conversation[]>("/conversations", token),
-  create: (token: string, title = "New conversation") =>
-    authorized<Conversation>("/conversations", token, { method: "POST", body: JSON.stringify({ title }) }),
-  update: (token: string, conversationId: string, title: string) =>
+  create: (token: string, title = "New conversation", model?: string) =>
+    authorized<Conversation>("/conversations", token, {
+      method: "POST",
+      body: JSON.stringify(model ? { title, model } : { title }),
+    }),
+  update: (token: string, conversationId: string, patch: { title?: string; model?: string }) =>
     authorized<Conversation>(`/conversations/${conversationId}`, token, {
       method: "PATCH",
-      body: JSON.stringify({ title }),
+      body: JSON.stringify(patch),
     }),
   remove: (token: string, conversationId: string) =>
     authorized<void>(`/conversations/${conversationId}`, token, { method: "DELETE" }),

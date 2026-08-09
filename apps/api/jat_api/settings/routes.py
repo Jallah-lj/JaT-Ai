@@ -26,6 +26,7 @@ from jat_api.db.repositories import (
     revoke_session_family,
     write_audit_log,
 )
+from jat_api.models.providers.ollama import list_ollama_models
 from jat_api.settings.repository import apply_patch, load_preferences, save_preferences
 from jat_api.settings.schemas import (
     MAX_MEMORIES,
@@ -382,16 +383,36 @@ async def list_models(request: Request, user: User = Depends(current_user)) -> l
         )
     ]
     if settings.model_endpoint:
-        options.append(
-            ModelOption(
-                id="ollama",
-                label="Local Ollama",
-                description="Self-hosted model served through the configured Ollama endpoint.",
-                provider="ollama",
-                available=True,
-                context_length=context_length,
+        # Enumerate the models actually installed on the Ollama server so each
+        # conversation can select a real model. Discovery is best-effort: if the
+        # server is unreachable we still advertise one selectable Ollama entry.
+        try:
+            installed = await list_ollama_models(settings.model_endpoint)
+        except Exception:  # discovery must never break the catalog
+            installed = []
+        if installed:
+            for name in dict.fromkeys(installed):
+                options.append(
+                    ModelOption(
+                        id=name,
+                        label=name,
+                        description="Self-hosted Ollama model from the configured endpoint.",
+                        provider="ollama",
+                        available=True,
+                        context_length=context_length,
+                    )
+                )
+        else:
+            options.append(
+                ModelOption(
+                    id="ollama",
+                    label="Local Ollama",
+                    description="Self-hosted Ollama model from the configured endpoint.",
+                    provider="ollama",
+                    available=True,
+                    context_length=context_length,
+                )
             )
-        )
     else:
         options.append(
             ModelOption(

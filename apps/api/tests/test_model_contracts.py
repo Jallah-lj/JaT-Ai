@@ -67,4 +67,3 @@ def test_ollama_payload_forwards_context_window_system_message_and_options() -> 
     assert options["temperature"] == 0.3
     assert options["num_predict"] == 256
     assert options["num_ctx"] == 4096  # context window forwarded, not silently dropped
-

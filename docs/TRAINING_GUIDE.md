@@ -100,7 +100,42 @@ across the `/chat`, `/chat/stream`, and retry paths. The trusted system
 instruction is placed **first**, ahead of conversation history and any
 untrusted RAG reference material. (See `tests/test_chat_orchestration.py`.)
 
-You do not need to do anything for this step — it is implemented.
+### Operator default system prompt (optional)
+
+If a user has **not** set their own system prompt, JaT can fall back to an
+operator-defined baseline persona via:
+
+```env
+JAT_DEFAULT_SYSTEM_PROMPT=You are JaT, a precise assistant. Say so if unsure.
+```
+
+Precedence: **user's prompt > operator default > none.** A user who sets their
+own prompt always wins; the operator default only fills the gap for users who
+left theirs blank. (See `effective_system_prompt` in `chat.py`.)
+
+You do not need to do anything else for this step — it is implemented.
+
+---
+
+## Per-conversation model selection
+
+Different chats can use different models — handy when a fast model suffices for
+quick questions and a larger model is better for reasoning.
+
+- The model picker in the chat header lists the models advertised by
+  `GET /api/v1/settings/models`. With Ollama configured, this **enumerates the
+  models actually installed** on the server (via Ollama `/api/tags`), so you
+  pick from real names like `llama3.1` or `qwen2.5`.
+- Choosing a model sends `PATCH /api/v1/conversations/{id}` with `{ "model": ... }`.
+  The conversation keeps its full history; only the model serving the next reply
+  changes.
+- New conversations start from your **Settings → Default model** preference.
+
+To select a model per chat:
+1. Configure Ollama and pull the models you want (`ollama pull llama3.1`,
+   `ollama pull qwen2.5`, …).
+2. Open a chat and use the model menu in the header to switch.
+
 
 ---
 

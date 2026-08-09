@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     model_context_length: int = Field(default=8192, ge=256, le=1_000_000)
     model_max_tokens: int = Field(default=1024, ge=1, le=16384)
     model_temperature: float = Field(default=0.2, ge=0.0, le=2.0)
+    # Operator-level baseline persona used only when a user has no system prompt of their own.
+    default_system_prompt: str = ""
     # Phase 3: governed ingestion and retrieval.
     embedding_provider: str = "deterministic"
     object_store_dir: str = ".jat-data/objects"

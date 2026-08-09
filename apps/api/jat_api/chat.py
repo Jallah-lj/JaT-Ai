@@ -194,10 +194,26 @@ def generation_request(
     )
 
 
-async def user_preferences(db: AsyncSession, user: User) -> tuple[str, float, int]:
+def effective_system_prompt(user_prompt: str, default_prompt: str) -> str:
+    """Return the system prompt to send, preferring the user's own.
+
+    A user's explicit prompt always wins. When they have none, fall back to the
+    operator-configured default (``JAT_DEFAULT_SYSTEM_PROMPT``) so a baseline
+    persona applies out of the box without overriding anyone's choice.
+    """
+    user = (user_prompt or "").strip()
+    if user:
+        return user
+    return (default_prompt or "").strip()
+
+
+async def user_preferences(
+    db: AsyncSession, user: User, *, default_system_prompt: str = ""
+) -> tuple[str, float, int]:
     """Read the chat controls a user configured, with safe fallbacks."""
     preferences = await load_preferences(db, user.id)
-    return preferences.system_prompt, preferences.temperature, preferences.max_tokens
+    system_prompt = effective_system_prompt(preferences.system_prompt, default_system_prompt)
+    return system_prompt, preferences.temperature, preferences.max_tokens
 
 
 @router.post("", response_model=ChatResponse)
@@ -214,7 +230,9 @@ async def chat(
         db, conversation_id=conversation.id, role="user", content=payload.content
     )
     history = grounded_history(await history_for(db, conversation.id), citations)
-    system_prompt, temperature, max_tokens = await user_preferences(db, user)
+    system_prompt, temperature, max_tokens = await user_preferences(
+        db, user, default_system_prompt=request.app.state.settings.default_system_prompt
+    )
     provider = create_provider(
         request.app.state.settings.model_provider, request.app.state.settings.model_endpoint
     )
@@ -261,7 +279,9 @@ async def chat_stream(
     citations = await retrieve_citations(request, db, user, payload)
     await store_message(db, conversation_id=conversation.id, role="user", content=payload.content)
     history = grounded_history(await history_for(db, conversation.id), citations)
-    system_prompt, temperature, max_tokens = await user_preferences(db, user)
+    system_prompt, temperature, max_tokens = await user_preferences(
+        db, user, default_system_prompt=request.app.state.settings.default_system_prompt
+    )
     provider = create_provider(
         request.app.state.settings.model_provider, request.app.state.settings.model_endpoint
     )
@@ -361,7 +381,9 @@ async def retry_message(
     if previous_user is None:
         raise HTTPException(status_code=409, detail="No preceding user message")
     history = await history_for(db, conversation.id)
-    system_prompt, temperature, max_tokens = await user_preferences(db, user)
+    system_prompt, temperature, max_tokens = await user_preferences(
+        db, user, default_system_prompt=request.app.state.settings.default_system_prompt
+    )
     provider = create_provider(
         request.app.state.settings.model_provider, request.app.state.settings.model_endpoint
     )
