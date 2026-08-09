@@ -35,3 +35,4 @@ uploads/
 data/
 logs/
 *.log
+.jat-data/

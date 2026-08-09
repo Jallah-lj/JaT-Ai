@@ -13,6 +13,7 @@ class DocumentChunk:
     document_id: UUID
     content: str
     embedding: list[float]
+    chunk_index: int = 0
     metadata: dict[str, str] = field(default_factory=dict)
 
 
@@ -33,7 +34,9 @@ class EmbeddingProvider(Protocol):
 
 class VectorStore(Protocol):
     async def upsert(self, chunks: list[DocumentChunk]) -> None: ...
+
     async def search(
         self, query_embedding: list[float], *, limit: int, filters: dict[str, str] | None = None
     ) -> list[RetrievalHit]: ...
+
     async def delete(self, document_id: UUID) -> None: ...

@@ -1,4 +1,5 @@
 """Finite state transitions for governed document ingestion."""
+
 ALLOWED = {
     "pending": {"validating", "failed"},
     "validating": {"parsing", "failed"},
@@ -8,6 +9,7 @@ ALLOWED = {
     "ready": set(),
     "failed": set(),
 }
+
 
 def can_transition(current: str, target: str) -> bool:
     return target in ALLOWED.get(current, set())

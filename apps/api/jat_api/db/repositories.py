@@ -81,6 +81,7 @@ async def write_audit_log(
     resource_type: str,
     actor_user_id: UUID | None = None,
     request_id: str | None = None,
+    resource_id: str | None = None,
 ) -> None:
     """Persist an allowlisted audit event; never pass raw credentials or request bodies."""
     from jat_api.db.models import AuditLog
@@ -91,6 +92,7 @@ async def write_audit_log(
             action=action,
             resource_type=resource_type,
             request_id=request_id,
+            resource_id=resource_id,
         )
     )
 

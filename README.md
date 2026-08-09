@@ -26,16 +26,20 @@
 - browser streaming UI, stop-generation control, persistence of terminal states
 - generation IDs, cancelled/failed/complete statuses, retry branches
 
-### Phase 3 — RAG foundation in progress
+### Phase 3 — governed RAG (text documents)
 
-- provider-neutral embedding and vector-store contracts
-- deterministic embedding fixture for tests
-- governed `knowledge_bases`, `documents`, and `document_chunks` schema
-- organization-scoped knowledge-base CRUD API
-- governed document registration with source, license, and SHA-256 hash metadata
-- ingestion worker contracts, validation policy, lifecycle states, and local dispatcher fixture
+- governed multipart uploads: source/license metadata, content-type allowlist, 25 MiB limit, server-side SHA-256, per-base dedupe
+- quarantined object storage contract with a local dev adapter; bytes never returned to clients
+- ingestion pipeline (`validating → parsing → chunking → embedding → ready`, explicit `failed` states with reasons)
+- deterministic paragraph-aware chunker and provider-neutral embeddings
+- dispatch modes: synchronous `inline` (dev default) and durable Redis queue with `python -m jat_api.ingestion.worker`
+- plain-text/Markdown parsing (PDF/JSON/CSV accepted for governance but parse failed-by-design until parsers land)
+- portable PostgreSQL vector indexing (pure-SQL cosine; pgvector swap documented in [RAG](docs/RAG.md))
+- organization-scoped semantic search with attributed citations
+- chat grounding via `knowledge_base_id`: untrusted delimited reference injection, `citation` SSE events before tokens, citation message parts persisted
+- ingestion audit trail and tenant-isolated retrieval paths
 
-Document parsing, durable queue dispatch, vector indexing, semantic retrieval, citations, and file uploads are **not yet enabled**.
+What Phase 3 still lacks: PDF/JSON/CSV and binary parsers, at-least-once queue semantics with re-dispatch, model-backed embedding providers, pgvector indexing, hybrid ranking, and the knowledge-base management UI.
 
 ### Settings and preferences
 
@@ -68,9 +72,10 @@ PostgreSQL · Redis · future object storage / pgvector / worker queue
 ## Repository layout
 
 ```text
-apps/api/        FastAPI gateway, migrations, domain routes, provider contracts
+apps/api/        FastAPI gateway, migrations, domain routes, provider/retrieval contracts,
+                 ingestion pipeline and worker (`python -m jat_api.ingestion.worker`)
 apps/web/        React workspace and streaming chat client
-services/workers/ Governed ingestion worker contracts
+services/workers/ Ownership boundary for a future standalone ingestion worker service
 infrastructure/  Future deployment/IaC ownership boundary
 docs/            Architecture, security, API, model, RAG, deployment guides
 ```
@@ -118,6 +123,14 @@ cd apps/web
 npm run dev
 ```
 
+To process uploads asynchronously (instead of the default synchronous `inline`
+dispatch), set `JAT_INGESTION_DISPATCHER=redis` and start the ingestion worker:
+
+```bash
+cd apps/api
+python -m jat_api.ingestion.worker
+```
+
 ## Quality checks
 
 Run all available checks:
@@ -154,8 +167,8 @@ See [Model providers](docs/MODEL.md). Never expose model endpoints, provider cre
 | Health | `GET /api/v1/health`, `/live`, `/ready` |
 | Authentication | register, login, refresh, logout, current user |
 | Conversations | create, list, retrieve, archive, message history |
-| Chat | `POST /api/v1/chat`, `POST /api/v1/chat/stream` |
-| Knowledge bases | create, list, retrieve, delete, governed document registration |
+| Chat | `POST /api/v1/chat`, `POST /api/v1/chat/stream` (citations when `knowledge_base_id` is set) |
+| Knowledge bases | CRUD, governed document registration, multipart upload, semantic search |
 | Metrics | `GET /metrics` — restrict at the deployment edge |
 
 OpenAPI is available at `/openapi.json` when the API is running.
