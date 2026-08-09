@@ -37,6 +37,16 @@
 
 Document parsing, durable queue dispatch, vector indexing, semantic retrieval, citations, and file uploads are **not yet enabled**.
 
+### Settings and preferences
+
+- persistent per-user preferences with partial (`PATCH`) updates and server-side validation
+- appearance controls — light/dark/system theme, five accent colours, text size, density, reduced motion
+- chat controls — default model, temperature, max tokens, custom system prompt, streaming, send-on-Enter
+- memory management — enable/disable plus add, remove, and clear individual memories
+- account security — profile editing, password rotation, active-session list with immediate revocation
+- data controls — usage statistics, JSON export, bulk conversation deletion, account deletion
+- responsive settings UI (desktop, tablet, and full-screen mobile) with keyboard and screen-reader support
+
 ## Architecture
 
 ```text

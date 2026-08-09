@@ -1,7 +1,20 @@
 export type User = { id: string; email: string; display_name: string };
 export type AuthSession = { access_token: string; token_type: "bearer"; user: User };
 
-type ApiProblem = { detail?: string; title?: string };
+type ValidationIssue = { msg?: string; loc?: (string | number)[] };
+type ApiProblem = { detail?: string | ValidationIssue[]; title?: string };
+
+/** FastAPI returns `detail` as a string for HTTPException and an array for validation errors. */
+function problemMessage(problem: ApiProblem): string | undefined {
+  const { detail } = problem;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail) && detail.length > 0) {
+    const issue = detail[0];
+    const field = issue.loc?.filter((part) => part !== "body").join(".");
+    return field ? `${field}: ${issue.msg ?? "is invalid"}` : issue.msg;
+  }
+  return problem.title;
+}
 
 export class ApiError extends Error {
   constructor(message: string, readonly status: number) {
@@ -17,9 +30,12 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   });
   if (!response.ok) {
     const problem = (await response.json().catch(() => ({}))) as ApiProblem;
-    throw new ApiError(problem.detail ?? problem.title ?? "Request failed", response.status);
+    throw new ApiError(problemMessage(problem) ?? "Request failed", response.status);
   }
-  return response.json() as Promise<T>;
+  if (response.status === 204 || response.headers.get("content-length") === "0") {
+    return undefined as T;
+  }
+  return (await response.json()) as T;
 }
 
 export type Conversation = { id: string; title: string; model: string; created_at: string; updated_at: string };
@@ -47,8 +63,97 @@ export const chatApi = {
   },
 };
 
-export type Preferences = { theme: "light" | "dark" | "system"; stream_responses: boolean; default_model: string; memory_enabled: boolean; chat_history_enabled: boolean; analytics_enabled: boolean; reduced_motion: boolean };
-export const settingsApi = { get: (token: string) => authorized<Preferences>("/settings", token), save: (token: string, preferences: Preferences) => authorized<Preferences>("/settings", token, { method: "PATCH", body: JSON.stringify(preferences) }) };
+export type Theme = "light" | "dark" | "system";
+export type Accent = "evergreen" | "citrus" | "ocean" | "violet" | "ember";
+export type FontScale = "small" | "medium" | "large";
+export type Density = "comfortable" | "compact";
+
+export type Preferences = {
+  theme: Theme;
+  accent: Accent;
+  font_scale: FontScale;
+  density: Density;
+  reduced_motion: boolean;
+  default_model: string;
+  stream_responses: boolean;
+  send_on_enter: boolean;
+  show_timestamps: boolean;
+  temperature: number;
+  max_tokens: number;
+  system_prompt: string;
+  memory_enabled: boolean;
+  memories: string[];
+  chat_history_enabled: boolean;
+  analytics_enabled: boolean;
+  sound_on_response: boolean;
+  email_product_updates: boolean;
+};
+
+export type PreferencesPatch = Partial<Preferences>;
+export type Profile = { id: string; email: string; display_name: string; created_at: string };
+export type ModelOption = { id: string; label: string; description: string; provider: string; available: boolean; context_length: number };
+export type SessionSummary = { id: string; created_at: string; last_used_at: string | null; expires_at: string; current: boolean };
+export type UsageStats = { conversations: number; messages: number; input_tokens: number; output_tokens: number; first_activity_at: string | null; last_activity_at: string | null };
+export type OperationResult = { ok: boolean; removed: number; detail: string };
+
+export const DEFAULT_PREFERENCES: Preferences = {
+  theme: "system",
+  accent: "evergreen",
+  font_scale: "medium",
+  density: "comfortable",
+  reduced_motion: false,
+  default_model: "jat-development",
+  stream_responses: true,
+  send_on_enter: true,
+  show_timestamps: false,
+  temperature: 0.2,
+  max_tokens: 1024,
+  system_prompt: "",
+  memory_enabled: true,
+  memories: [],
+  chat_history_enabled: true,
+  analytics_enabled: false,
+  sound_on_response: false,
+  email_product_updates: false,
+};
+
+export const settingsApi = {
+  get: (token: string) => authorized<Preferences>("/settings", token),
+  update: (token: string, patch: PreferencesPatch) =>
+    authorized<Preferences>("/settings", token, { method: "PATCH", body: JSON.stringify(patch) }),
+  reset: (token: string) => authorized<Preferences>("/settings/reset", token, { method: "POST" }),
+
+  addMemory: (token: string, text: string) =>
+    authorized<Preferences>("/settings/memories", token, { method: "POST", body: JSON.stringify({ text }) }),
+  deleteMemory: (token: string, index: number) =>
+    authorized<Preferences>(`/settings/memories/${index}`, token, { method: "DELETE" }),
+  clearMemories: (token: string) =>
+    authorized<Preferences>("/settings/memories", token, { method: "DELETE" }),
+
+  profile: (token: string) => authorized<Profile>("/settings/profile", token),
+  updateProfile: (token: string, patch: { display_name?: string; email?: string }) =>
+    authorized<Profile>("/settings/profile", token, { method: "PATCH", body: JSON.stringify(patch) }),
+  changePassword: (token: string, current_password: string, new_password: string) =>
+    authorized<OperationResult>("/settings/password", token, { method: "POST", body: JSON.stringify({ current_password, new_password }) }),
+
+  models: (token: string) => authorized<ModelOption[]>("/settings/models", token),
+  sessions: (token: string) => authorized<SessionSummary[]>("/settings/sessions", token),
+  revokeSession: (token: string, id: string) =>
+    authorized<OperationResult>(`/settings/sessions/${id}`, token, { method: "DELETE" }),
+  revokeOtherSessions: (token: string) =>
+    authorized<OperationResult>("/settings/sessions/revoke-others", token, { method: "POST" }),
+
+  usage: (token: string) => authorized<UsageStats>("/settings/usage", token),
+  exportData: (token: string) => authorized<Record<string, unknown>>("/settings/export", token),
+  deleteConversations: (token: string) =>
+    authorized<OperationResult>("/settings/conversations", token, { method: "DELETE" }),
+  deleteAccount: (token: string, password: string, confirmation: string) =>
+    request<void>("/settings/delete-account", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ password, confirmation }),
+    }),
+};
 
 export const authApi = {
   register: (payload: { email: string; password: string; display_name: string }) =>

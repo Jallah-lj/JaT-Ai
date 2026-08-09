@@ -1,5 +1,7 @@
-import { FormEvent, ReactElement, useEffect, useState } from "react";
-import { ApiError, authApi, chatApi, conversationApi, type Conversation, type User } from "../lib/api";
+import { FormEvent, ReactElement, useCallback, useEffect, useState } from "react";
+import { ApiError, authApi, chatApi, conversationApi, settingsApi, type Conversation, type Preferences, type User } from "../lib/api";
+import { SettingsPage } from "./settings/SettingsPage";
+import { applyPreferences, cachePreferences, readCachedPreferences } from "../lib/preferences";
 import "../styles/app.css";
 
 type Mode = "login" | "register";
@@ -9,6 +11,27 @@ type AuthScreenProps = {
   onModeChange: (mode: Mode) => void;
   onAuthenticated: (token: string, user: User) => void;
 };
+
+/** Short, quiet confirmation tone; created on demand so no audio runs unless enabled. */
+function playChime(): void {
+  try {
+    const AudioCtor = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioCtor) return;
+    const context = new AudioCtor();
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.frequency.value = 880;
+    gain.gain.setValueAtTime(0.0001, context.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.05, context.currentTime + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.25);
+    oscillator.connect(gain).connect(context.destination);
+    oscillator.start();
+    oscillator.stop(context.currentTime + 0.26);
+    oscillator.onended = () => void context.close();
+  } catch {
+    // Audio is a non-essential enhancement.
+  }
+}
 
 function BrandMark(): ReactElement {
   return <span className="brand-mark" aria-hidden="true">J</span>;
@@ -61,9 +84,19 @@ function AuthScreen({ mode, onModeChange, onAuthenticated }: AuthScreenProps): R
   </main>;
 }
 
-function Workspace({ user, token, onLogout }: { user: User; token: string; onLogout: () => void }): ReactElement {
+type WorkspaceProps = {
+  user: User;
+  token: string;
+  onLogout: () => void;
+  preferences: Preferences;
+  onPreferencesChange: (preferences: Preferences) => void;
+  onProfileChange: (user: User) => void;
+};
+
+function Workspace({ user, token, onLogout, preferences, onPreferencesChange, onProfileChange }: WorkspaceProps): ReactElement {
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [navOpen, setNavOpen] = useState(false);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [active, setActive] = useState<Conversation | null>(null);
   const [draft, setDraft] = useState("");
@@ -78,19 +111,35 @@ function Workspace({ user, token, onLogout }: { user: User; token: string; onLog
     if (!draft.trim() || sending) return;
     const content = draft.trim(); setDraft(""); setSending(true); setMessages((items) => [...items, { role: "user", content }]);
     const controller = new AbortController(); setStreamController(controller);
-    try { const target = active ?? await conversationApi.create(token); if (!active) { setActive(target); setConversations((items) => [target, ...items]); } setMessages((items) => [...items, { role: "assistant", content: "" }]); await chatApi.stream(token, target.id, content, (chunk) => setMessages((items) => items.map((message, index) => index === items.length - 1 && message.role === "assistant" ? { ...message, content: message.content + chunk } : message)), controller.signal); }
+    try {
+      const target = active ?? await conversationApi.create(token);
+      if (!active) { setActive(target); setConversations((items) => [target, ...items]); }
+      if (preferences.stream_responses) {
+        setMessages((items) => [...items, { role: "assistant", content: "" }]);
+        await chatApi.stream(token, target.id, content, (chunk) => setMessages((items) => items.map((message, index) => index === items.length - 1 && message.role === "assistant" ? { ...message, content: message.content + chunk } : message)), controller.signal);
+      } else {
+        const result = await chatApi.send(token, target.id, content);
+        setMessages((items) => [...items, { id: result.assistant_message_id, role: "assistant", content: result.content, status: "complete" }]);
+      }
+      if (preferences.sound_on_response) playChime();
+    }
     catch (error) { if (!(error instanceof DOMException && error.name === "AbortError")) setMessages((items) => [...items, { role: "assistant", content: "JaT could not complete that request. Please try again." }]); }
     finally { setSending(false); setStreamController(null); }
   }
   async function retry(messageId: string): Promise<void> { setSending(true); try { const result = await chatApi.retry(token, messageId); setMessages((items) => [...items, { id: result.assistant_message_id, role: "assistant", content: result.content, status: "complete" }]); } finally { setSending(false); } }
   return <main className="workspace">
-    <aside className="sidebar"><div className="brand"><BrandMark /><span>JaT</span></div><button className="new-chat" onClick={() => void newConversation()}>+ <span>New conversation</span><kbd>⌘ K</kbd></button><nav><p>RECENT</p>{conversations.map((conversation) => <button key={conversation.id} onClick={() => { setActive(conversation); setMessages([]); }} className={`nav-chat ${active?.id === conversation.id ? "active" : ""}`}>{conversation.title}</button>)}</nav><div className="sidebar-bottom"><button>⌘ Search</button><button>◌ Knowledge bases</button><button>⌁ Models <em>Phase 2</em></button></div></aside>
-    <section className="chat-stage"><header className="chat-header"><div><p className="eyebrow">JAT ASSISTANT</p><h2>{active?.title ?? "New conversation"}</h2></div><button className="model-pill">{active?.model ?? "JaT development"} <span>⌄</span></button></header>
+    <aside className={`sidebar ${navOpen ? "open" : ""}`}><div className="brand"><BrandMark /><span>JaT</span></div><button className="new-chat" onClick={() => { setNavOpen(false); void newConversation(); }}>+ <span>New conversation</span><kbd>⌘ K</kbd></button><nav><p>RECENT</p>{conversations.map((conversation) => <button key={conversation.id} onClick={() => { setActive(conversation); setMessages([]); setNavOpen(false); }} className={`nav-chat ${active?.id === conversation.id ? "active" : ""}`}>{conversation.title}</button>)}</nav><div className="sidebar-bottom"><button>⌘ Search</button><button>◌ Knowledge bases</button><button>⌁ Models <em>Phase 2</em></button></div></aside>
+    <section className="chat-stage"><header className="chat-header"><button className="nav-toggle" aria-label="Open navigation" aria-expanded={navOpen} onClick={() => setNavOpen(true)}>☰</button><div><p className="eyebrow">JAT ASSISTANT</p><h2>{active?.title ?? "New conversation"}</h2></div><button className="model-pill">{active?.model ?? "JaT development"} <span>⌄</span></button></header>
       <div className={messages.length ? "message-list" : "empty-chat"}>{messages.length ? messages.map((message, index) => <article key={index} className={`message ${message.role}`}><span>{message.role === "user" ? user.display_name.slice(0, 1) : "J"}</span><div><p>{message.content}</p>{message.role === "assistant" && message.status && message.status !== "complete" && <small className="message-status">{message.status === "cancelled" ? "Generation stopped" : message.status === "failed" ? "Generation failed" : "Generating…"}</small>}{message.role === "assistant" && message.id && (message.status === "cancelled" || message.status === "failed") && <button className="retry-button" disabled={sending} onClick={() => void retry(message.id!)}>Retry response</button>}</div></article>) : <><div className="orbit"><span>✦</span></div><p className="eyebrow">THE JAT FOUNDATION</p><h1>How can I help?</h1><p>Ask a question to exercise JaT’s provider-neutral chat pipeline.</p><div className="suggestions"><button onClick={() => setDraft("Explain the JaT architecture.")}>Explore the architecture <span>↗</span></button><button onClick={() => setDraft("Review the security controls.")}>Review security controls <span>↗</span></button></div></>}</div>
-      <div className="composer"><input value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }} placeholder="Ask JaT anything…" disabled={sending} /><button onClick={() => sending ? streamController?.abort() : void send()} disabled={!sending && !draft.trim()} aria-label={sending ? "Stop generating" : "Send message"}>{sending ? "■" : "↑"}</button></div>
+      <div className="composer"><input value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => {
+        const modifierSend = event.key === "Enter" && (event.metaKey || event.ctrlKey);
+        const plainSend = preferences.send_on_enter && event.key === "Enter" && !event.shiftKey && !event.metaKey && !event.ctrlKey;
+        if (modifierSend || plainSend) { event.preventDefault(); void send(); }
+      }} placeholder="Ask JaT anything…" disabled={sending} /><button onClick={() => sending ? streamController?.abort() : void send()} disabled={!sending && !draft.trim()} aria-label={sending ? "Stop generating" : "Send message"}>{sending ? "■" : "↑"}</button></div>
     </section>
     <aside className="profile-rail"><button className="avatar" onClick={() => setMenuOpen(!menuOpen)} aria-label="Open profile menu">{user.display_name.slice(0, 1).toUpperCase()}</button>{menuOpen && <div className="profile-menu"><strong>{user.display_name}</strong><small>{user.email}</small><hr /><button onClick={() => { setSettingsOpen(true); setMenuOpen(false); }}>Settings</button><button onClick={onLogout}>Sign out</button></div>}</aside>
-    {settingsOpen && <div className="settings-backdrop" role="dialog" aria-modal="true" aria-label="Settings"><section className="settings-panel"><header><div><p className="eyebrow">PREFERENCES</p><h2>Settings</h2></div><button className="close-settings" onClick={() => setSettingsOpen(false)}>×</button></header><nav className="settings-nav"><button className="selected">General</button><button>Appearance</button><button>Memory</button><button>Data controls</button></nav><div className="settings-content"><h3>General</h3><label>Display name<input defaultValue={user.display_name} /></label><label>Default model<select defaultValue="jat-development"><option value="jat-development">JaT development</option><option value="ollama">Local Ollama</option></select></label><div className="setting-row"><div><strong>Stream responses</strong><p>Show JaT responses as they are generated.</p></div><input type="checkbox" defaultChecked /></div><div className="setting-row"><div><strong>Conversation memory</strong><p>Allow future memory features for this workspace.</p></div><input type="checkbox" defaultChecked /></div><button className="save-settings" onClick={() => setSettingsOpen(false)}>Save changes</button></div></section></div>}
+    {navOpen && <button className="nav-scrim" aria-label="Close navigation" onClick={() => setNavOpen(false)} />}
+    {settingsOpen && <SettingsPage token={token} user={user} preferences={preferences} onPreferencesChange={onPreferencesChange} onProfileChange={onProfileChange} onClose={() => setSettingsOpen(false)} onSignedOut={onLogout} />}
   </main>;
 }
 
@@ -98,8 +147,36 @@ export function App(): ReactElement {
   const [mode, setMode] = useState<Mode>("login");
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
+  const [preferences, setPreferences] = useState<Preferences>(readCachedPreferences);
+
+  const updatePreferences = useCallback((next: Preferences) => {
+    setPreferences(next);
+    cachePreferences(next);
+    applyPreferences(next);
+  }, []);
+
+  // Appearance must survive reloads and follow the OS when "system" is selected.
+  useEffect(() => applyPreferences(preferences), [preferences]);
+  useEffect(() => {
+    if (typeof matchMedia === "undefined") return;
+    const query = matchMedia("(prefers-color-scheme: dark)");
+    const onChange = () => applyPreferences(preferences);
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, [preferences]);
 
   useEffect(() => { void authApi.refresh().then((session) => { setToken(session.access_token); setUser(session.user); }).catch(() => undefined); }, []);
+
+  // Server preferences are authoritative once a session exists.
+  useEffect(() => {
+    if (!token) return;
+    void settingsApi.get(token).then(updatePreferences).catch(() => undefined);
+  }, [token, updatePreferences]);
+
+  function signOut(): void {
+    void authApi.logout().finally(() => { setToken(null); setUser(null); });
+  }
+
   if (!token || !user) return <AuthScreen mode={mode} onModeChange={setMode} onAuthenticated={(nextToken, nextUser) => { setToken(nextToken); setUser(nextUser); }} />;
-  return <Workspace user={user} token={token} onLogout={() => { void authApi.logout().finally(() => { setToken(null); setUser(null); }); }} />;
+  return <Workspace user={user} token={token} onLogout={signOut} preferences={preferences} onPreferencesChange={updatePreferences} onProfileChange={setUser} />;
 }

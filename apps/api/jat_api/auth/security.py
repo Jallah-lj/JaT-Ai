@@ -35,9 +35,12 @@ def token_hash(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-def issue_access_token(user_id: UUID, settings: Settings) -> str:
+def issue_access_token(
+    user_id: UUID, settings: Settings, *, session_family_id: UUID | None = None
+) -> str:
+    """Mint an access token, optionally bound to the refresh-session family it came from."""
     now = datetime.now(UTC)
-    claims = {
+    claims: dict[str, object] = {
         "sub": str(user_id),
         "iss": settings.jwt_issuer,
         "aud": settings.jwt_audience,
@@ -45,10 +48,12 @@ def issue_access_token(user_id: UUID, settings: Settings) -> str:
         "exp": now + timedelta(minutes=settings.access_token_ttl_minutes),
         "type": "access",
     }
+    if session_family_id is not None:
+        claims["sid"] = str(session_family_id)
     return jwt.encode(claims, settings.jwt_secret.get_secret_value(), algorithm="HS256")
 
 
-def access_token_subject(token: str, settings: Settings) -> UUID:
+def decode_access_token(token: str, settings: Settings) -> dict[str, object]:
     claims = jwt.decode(
         token,
         settings.jwt_secret.get_secret_value(),
@@ -58,4 +63,19 @@ def access_token_subject(token: str, settings: Settings) -> UUID:
     )
     if claims.get("type") != "access":
         raise jwt.InvalidTokenError("unexpected token type")
-    return UUID(str(claims["sub"]))
+    return dict(claims)
+
+
+def access_token_subject(token: str, settings: Settings) -> UUID:
+    return UUID(str(decode_access_token(token, settings)["sub"]))
+
+
+def access_token_session_family(token: str, settings: Settings) -> UUID | None:
+    """Return the refresh-session family bound to this token, when present."""
+    raw = decode_access_token(token, settings).get("sid")
+    if raw is None:
+        return None
+    try:
+        return UUID(str(raw))
+    except ValueError:
+        return None

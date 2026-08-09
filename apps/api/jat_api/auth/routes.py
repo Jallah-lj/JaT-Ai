@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -56,13 +56,15 @@ def refresh_cookie_is_secure(settings: Settings) -> bool:
 
 async def start_session(
     response: Response, db: AsyncSession, user: User, settings: Settings
-) -> None:
+) -> UUID:
+    """Create a refresh session and return its family id for access-token binding."""
     raw_token = new_refresh_token()
+    family_id = uuid4()
     await create_session(
         db,
         user_id=user.id,
         refresh_token_hash=token_hash(raw_token),
-        family_id=uuid4(),
+        family_id=family_id,
         expires_at=datetime.now(UTC) + timedelta(days=settings.refresh_token_ttl_days),
     )
     response.set_cookie(
@@ -74,11 +76,14 @@ async def start_session(
         max_age=settings.refresh_token_ttl_days * 86_400,
         path="/api/v1/auth",
     )
+    return family_id
 
 
-def response_for(user: User, settings: Settings) -> TokenResponse:
+def response_for(
+    user: User, settings: Settings, session_family_id: UUID | None = None
+) -> TokenResponse:
     return TokenResponse(
-        access_token=issue_access_token(user.id, settings),
+        access_token=issue_access_token(user.id, settings, session_family_id=session_family_id),
         user=UserResponse(id=user.id, email=user.email, display_name=user.display_name),
     )
 
@@ -105,7 +110,7 @@ async def register(
             display_name=payload.display_name.strip(),
             slug=slug_for(payload.display_name),
         )
-        await start_session(response, db, user, request.app.state.settings)
+        family_id = await start_session(response, db, user, request.app.state.settings)
         await write_audit_log(
             db,
             action="auth.register",
@@ -117,7 +122,7 @@ async def register(
     except IntegrityError as error:
         await db.rollback()
         raise HTTPException(status_code=409, detail="Unable to create account") from error
-    return response_for(user, request.app.state.settings)
+    return response_for(user, request.app.state.settings, family_id)
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -141,7 +146,7 @@ async def login(
         )
         await db.commit()
         raise HTTPException(status_code=401, detail="Invalid email or password")
-    await start_session(response, db, user, request.app.state.settings)
+    family_id = await start_session(response, db, user, request.app.state.settings)
     await write_audit_log(
         db,
         action="auth.login",
@@ -150,7 +155,7 @@ async def login(
         request_id=request.headers.get("X-Request-ID"),
     )
     await db.commit()
-    return response_for(user, request.app.state.settings)
+    return response_for(user, request.app.state.settings, family_id)
 
 
 @router.post("/refresh", response_model=TokenResponse)
@@ -196,7 +201,7 @@ async def refresh(
         max_age=request.app.state.settings.refresh_token_ttl_days * 86_400,
         path="/api/v1/auth",
     )
-    return response_for(user, request.app.state.settings)
+    return response_for(user, request.app.state.settings, record.family_id)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
