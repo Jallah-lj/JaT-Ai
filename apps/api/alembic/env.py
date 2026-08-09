@@ -46,7 +46,7 @@ def _load_project_env() -> None:
     if os.environ.get("JAT_DATABASE_URL"):
         return
 
-    # Prefer python-dotenv if available – it handles quoting/expansion better.
+    # Prefer python-dotenv if available - it handles quoting/expansion better.
     try:
         from dotenv import load_dotenv
 

@@ -17,6 +17,7 @@ import {
   MIN_PASSWORD_LENGTH,
   settingsApi,
   type Conversation,
+  type ModelOption,
   type Preferences,
   type User,
 } from "../lib/api";
@@ -292,6 +293,7 @@ function Workspace({
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [attachments, setAttachments] = useState<AttachedFile[]>([]);
+  const [models, setModels] = useState<ModelOption[]>([]);
   const [composerError, setComposerError] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
@@ -309,6 +311,13 @@ function Workspace({
       .then((items) => setActive((current) => current ?? items[0] ?? null))
       .catch(() => undefined);
   }, [refreshConversations]);
+
+  useEffect(() => {
+    settingsApi
+      .models(token)
+      .then(setModels)
+      .catch(() => undefined);
+  }, [token]);
 
   useEffect(() => {
     if (!active) {
@@ -364,9 +373,27 @@ function Workspace({
     return conversations.filter((conversation) => conversation.title.toLowerCase().includes(query));
   }, [conversations, searchQuery]);
 
+  const activeModel = active?.model ?? preferences.default_model ?? "jat-development";
+  const modelOptions = useMemo(() => {
+    // Always let the current model render as selectable, even before the catalog loads
+    // or if the conversation pins a model the server no longer advertises.
+    if (!activeModel || models.some((option) => option.id === activeModel)) return models;
+    return [
+      {
+        id: activeModel,
+        label: activeModel,
+        description: "",
+        provider: "unknown",
+        available: true,
+        context_length: 0,
+      },
+      ...models,
+    ];
+  }, [activeModel, models]);
+
   async function newConversation(): Promise<void> {
     try {
-      const item = await conversationApi.create(token);
+      const item = await conversationApi.create(token, "New conversation", preferences.default_model);
       setConversations((items) => [item, ...items]);
       setActive(item);
       setMessages([]);
@@ -404,7 +431,7 @@ function Workspace({
       return;
     }
     try {
-      const updated = await conversationApi.update(token, conversation.id, title);
+      const updated = await conversationApi.update(token, conversation.id, { title });
       setConversations((items) => items.map((item) => (item.id === updated.id ? updated : item)));
       if (active?.id === updated.id) setActive(updated);
     } catch (caught) {
@@ -412,6 +439,17 @@ function Workspace({
     } finally {
       setRenamingId(null);
       setMenuFor(null);
+    }
+  }
+
+  async function changeModel(model: string): Promise<void> {
+    if (!active || !model || model === active.model) return;
+    try {
+      const updated = await conversationApi.update(token, active.id, { model });
+      setActive(updated);
+      setConversations((items) => items.map((item) => (item.id === updated.id ? updated : item)));
+    } catch (caught) {
+      setComposerError(caught instanceof ApiError ? caught.message : "Could not switch model.");
     }
   }
 
@@ -459,7 +497,7 @@ function Workspace({
     try {
       let target = active;
       if (!target) {
-        target = await conversationApi.create(token, titleFromMessage(text || pendingAttachments[0]?.name || "New conversation"));
+        target = await conversationApi.create(token, titleFromMessage(text || pendingAttachments[0]?.name || "New conversation"), preferences.default_model);
         setActive(target);
         setConversations((items) => [target!, ...items]);
       } else if (
@@ -468,7 +506,7 @@ function Workspace({
       ) {
         const titled = titleFromMessage(text || pendingAttachments[0]?.name || "New conversation");
         try {
-          const updated = await conversationApi.update(token, target.id, titled);
+          const updated = await conversationApi.update(token, target.id, { title: titled });
           target = updated;
           setActive(updated);
           setConversations((items) => items.map((item) => (item.id === updated.id ? updated : item)));
@@ -748,9 +786,25 @@ function Workspace({
                 ⌫
               </button>
             )}
-            <button type="button" className="model-pill" onClick={() => openSettings("chat")}>
-              {active?.model ?? "JaT development"} <span>⌄</span>
-            </button>
+            <select
+              className="model-pill"
+              aria-label="Conversation model"
+              title="Switch the model for this chat"
+              value={activeModel}
+              disabled={!active}
+              onChange={(event) => void changeModel(event.target.value)}
+            >
+              {modelOptions.length === 0 ? (
+                <option value={activeModel}>{active?.model ?? "JaT development"}</option>
+              ) : (
+                modelOptions.map((option) => (
+                  <option key={option.id} value={option.id} disabled={!option.available}>
+                    {option.label}
+                    {option.available ? "" : " (unavailable)"}
+                  </option>
+                ))
+              )}
+            </select>
           </div>
         </header>
 

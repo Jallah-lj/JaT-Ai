@@ -21,7 +21,10 @@ class CreateConversationRequest(BaseModel):
 
 
 class UpdateConversationRequest(BaseModel):
-    title: str = Field(min_length=1, max_length=200)
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    # Changing the model switches which provider model serves subsequent messages
+    # in this conversation without altering its history.
+    model: str | None = Field(default=None, min_length=1, max_length=120)
 
 
 class MessageResponse(BaseModel):
@@ -130,7 +133,10 @@ async def update_conversation(
     )
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
-    conversation.title = payload.title.strip()
+    if payload.title is not None:
+        conversation.title = payload.title.strip()
+    if payload.model is not None:
+        conversation.model = payload.model.strip()
     conversation.updated_at = datetime.now().astimezone()
     await write_audit_log(
         db,

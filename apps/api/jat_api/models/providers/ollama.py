@@ -7,6 +7,23 @@ import httpx
 from jat_api.models.contracts import GenerationRequest, GenerationResult, TokenEvent
 
 
+async def list_ollama_models(
+    endpoint: str, *, transport: httpx.AsyncBaseTransport | None = None, timeout: float = 2.0
+) -> list[str]:
+    """Return the names of models installed on the Ollama server.
+
+    Best-effort discovery for the model picker. Callers must tolerate failure
+    (Ollama down, slow, or misconfigured) by catching exceptions and falling
+    back to configured defaults. ``transport`` supports tests without a server.
+    """
+    async with httpx.AsyncClient(timeout=timeout, transport=transport) as client:
+        response = await client.get(f"{endpoint.rstrip('/')}/api/tags")
+        response.raise_for_status()
+        data = response.json()
+    models = data.get("models", []) if isinstance(data, dict) else []
+    return [str(item["name"]) for item in models if isinstance(item, dict) and item.get("name")]
+
+
 class OllamaProvider:
     name = "ollama"
 
@@ -18,7 +35,13 @@ class OllamaProvider:
             "model": request.model,
             "messages": [message.__dict__ for message in request.messages],
             "stream": stream,
-            "options": {"temperature": request.temperature, "num_predict": request.max_tokens},
+            "options": {
+                "temperature": request.temperature,
+                "num_predict": request.max_tokens,
+                # Forward the configured context window so long conversations and
+                # RAG-injected reference material are not silently truncated.
+                "num_ctx": request.context_length,
+            },
         }
 
     async def generate(self, request: GenerationRequest) -> GenerationResult:

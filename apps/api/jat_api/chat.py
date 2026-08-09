@@ -19,6 +19,7 @@ from jat_api.knowledge_bases import owned as owned_knowledge_base
 from jat_api.models import ChatMessage, GenerationRequest, create_provider
 from jat_api.rag.retrieval import Citation, retrieve
 from jat_api.rag.store import PostgresVectorStore
+from jat_api.settings.repository import load_preferences
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -121,6 +122,19 @@ def grounded_history(history: list[ChatMessage], citations: list[Citation]) -> l
     return [ChatMessage(role="user", content=render_reference_context(citations)), *history]
 
 
+def with_system_prompt(history: list[ChatMessage], system_prompt: str) -> list[ChatMessage]:
+    """Prepend the user's trusted system prompt ahead of every other message.
+
+    The system prompt is operator/user-authored trusted instruction, so it sits
+    at position zero: before any untrusted reference material and conversation
+    history. A blank prompt leaves the history untouched.
+    """
+    prompt = (system_prompt or "").strip()
+    if not prompt:
+        return history
+    return [ChatMessage(role="system", content=prompt), *history]
+
+
 async def store_citation_parts(
     db: AsyncSession, *, message: Message, citations: list[Citation]
 ) -> None:
@@ -154,16 +168,52 @@ async def maybe_auto_title(conversation: Conversation, content: str) -> None:
 
 
 def generation_request(
-    request: Request, conversation: Conversation, history: list[ChatMessage]
+    request: Request,
+    conversation: Conversation,
+    history: list[ChatMessage],
+    *,
+    system_prompt: str = "",
+    temperature: float | None = None,
+    max_tokens: int | None = None,
 ) -> GenerationRequest:
+    """Build a generation request.
+
+    Per-user chat preferences take effect here: the saved ``system_prompt``
+    becomes a leading trusted instruction, while ``temperature`` and
+    ``max_tokens`` override the server defaults when the user has set them.
+    Unset values fall back to the configured server settings so behaviour is
+    unchanged for accounts that never customized their chat controls.
+    """
     settings = request.app.state.settings
     return GenerationRequest(
-        messages=history,
+        messages=with_system_prompt(history, system_prompt),
         model=conversation.model,
-        max_tokens=settings.model_max_tokens,
-        temperature=settings.model_temperature,
+        max_tokens=max_tokens if max_tokens is not None else settings.model_max_tokens,
+        temperature=temperature if temperature is not None else settings.model_temperature,
         context_length=settings.model_context_length,
     )
+
+
+def effective_system_prompt(user_prompt: str, default_prompt: str) -> str:
+    """Return the system prompt to send, preferring the user's own.
+
+    A user's explicit prompt always wins. When they have none, fall back to the
+    operator-configured default (``JAT_DEFAULT_SYSTEM_PROMPT``) so a baseline
+    persona applies out of the box without overriding anyone's choice.
+    """
+    user = (user_prompt or "").strip()
+    if user:
+        return user
+    return (default_prompt or "").strip()
+
+
+async def user_preferences(
+    db: AsyncSession, user: User, *, default_system_prompt: str = ""
+) -> tuple[str, float, int]:
+    """Read the chat controls a user configured, with safe fallbacks."""
+    preferences = await load_preferences(db, user.id)
+    system_prompt = effective_system_prompt(preferences.system_prompt, default_system_prompt)
+    return system_prompt, preferences.temperature, preferences.max_tokens
 
 
 @router.post("", response_model=ChatResponse)
@@ -180,10 +230,22 @@ async def chat(
         db, conversation_id=conversation.id, role="user", content=payload.content
     )
     history = grounded_history(await history_for(db, conversation.id), citations)
+    system_prompt, temperature, max_tokens = await user_preferences(
+        db, user, default_system_prompt=request.app.state.settings.default_system_prompt
+    )
     provider = create_provider(
         request.app.state.settings.model_provider, request.app.state.settings.model_endpoint
     )
-    result = await provider.generate(generation_request(request, conversation, history))
+    result = await provider.generate(
+        generation_request(
+            request,
+            conversation,
+            history,
+            system_prompt=system_prompt,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+    )
     assistant_message = await store_message(
         db,
         conversation_id=conversation.id,
@@ -217,6 +279,9 @@ async def chat_stream(
     citations = await retrieve_citations(request, db, user, payload)
     await store_message(db, conversation_id=conversation.id, role="user", content=payload.content)
     history = grounded_history(await history_for(db, conversation.id), citations)
+    system_prompt, temperature, max_tokens = await user_preferences(
+        db, user, default_system_prompt=request.app.state.settings.default_system_prompt
+    )
     provider = create_provider(
         request.app.state.settings.model_provider, request.app.state.settings.model_endpoint
     )
@@ -238,7 +303,16 @@ async def chat_stream(
         for citation in citations:
             yield f"event: citation\ndata: {json.dumps(citation.to_dict())}\n\n"
         try:
-            async for token in provider.stream(generation_request(request, conversation, history)):
+            async for token in provider.stream(
+                generation_request(
+                    request,
+                    conversation,
+                    history,
+                    system_prompt=system_prompt,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+            ):
                 text += token.text
                 data = json.dumps({"text": token.text, "index": token.index})
                 yield f"event: token\ndata: {data}\n\n"
@@ -307,10 +381,22 @@ async def retry_message(
     if previous_user is None:
         raise HTTPException(status_code=409, detail="No preceding user message")
     history = await history_for(db, conversation.id)
+    system_prompt, temperature, max_tokens = await user_preferences(
+        db, user, default_system_prompt=request.app.state.settings.default_system_prompt
+    )
     provider = create_provider(
         request.app.state.settings.model_provider, request.app.state.settings.model_endpoint
     )
-    result = await provider.generate(generation_request(request, conversation, history))
+    result = await provider.generate(
+        generation_request(
+            request,
+            conversation,
+            history,
+            system_prompt=system_prompt,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+    )
     replacement = await store_message(
         db,
         conversation_id=conversation.id,
