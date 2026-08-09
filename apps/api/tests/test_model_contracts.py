@@ -38,3 +38,33 @@ async def test_slow_provider_stream_can_be_cancelled() -> None:
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
+
+
+def test_ollama_payload_forwards_context_window_system_message_and_options() -> None:
+    from jat_api.models.providers.ollama import OllamaProvider
+
+    provider = OllamaProvider("http://localhost:11434/")
+    request = GenerationRequest(
+        messages=[
+            ChatMessage(role="system", content="Be concise."),
+            ChatMessage(role="user", content="hello"),
+        ],
+        model="llama3.1",
+        max_tokens=256,
+        temperature=0.3,
+        context_length=4096,
+    )
+
+    payload = provider._payload(request, stream=False)
+
+    assert provider.endpoint == "http://localhost:11434"  # trailing slash stripped
+    assert payload["model"] == "llama3.1"
+    assert payload["stream"] is False
+    # System instructions lead the message list sent to the model.
+    assert payload["messages"][0] == {"role": "system", "content": "Be concise."}
+    assert payload["messages"][1] == {"role": "user", "content": "hello"}
+    options = payload["options"]
+    assert options["temperature"] == 0.3
+    assert options["num_predict"] == 256
+    assert options["num_ctx"] == 4096  # context window forwarded, not silently dropped
+

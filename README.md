@@ -190,6 +190,7 @@ Read [Security](docs/SECURITY.md) before deployment.
 
 ## Documentation
 
+- [Training your JaT agent](docs/TRAINING_GUIDE.md)
 - [Architecture assessment](ARCHITECTURE_ASSESSMENT.md)
 - [API contract](docs/API.md)
 - [Security baseline](docs/SECURITY.md)

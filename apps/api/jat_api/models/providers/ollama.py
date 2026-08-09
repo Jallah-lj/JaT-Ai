@@ -18,7 +18,13 @@ class OllamaProvider:
             "model": request.model,
             "messages": [message.__dict__ for message in request.messages],
             "stream": stream,
-            "options": {"temperature": request.temperature, "num_predict": request.max_tokens},
+            "options": {
+                "temperature": request.temperature,
+                "num_predict": request.max_tokens,
+                # Forward the configured context window so long conversations and
+                # RAG-injected reference material are not silently truncated.
+                "num_ctx": request.context_length,
+            },
         }
 
     async def generate(self, request: GenerationRequest) -> GenerationResult:
