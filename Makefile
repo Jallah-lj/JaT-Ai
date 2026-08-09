@@ -1,6 +1,9 @@
 .PHONY: api-migrate api-install api-format api-lint api-type api-test web-install web-lint web-type web-test web-build verify
 
 api-migrate:
+	set -a; \
+	if [ -f .env ]; then . ./.env; fi; \
+	if [ -f apps/api/.env ]; then . ./apps/api/.env; fi; \
 	cd apps/api && python3 -m alembic upgrade head
 api-install:
 	python3 -m pip install -e "./apps/api[dev]"
