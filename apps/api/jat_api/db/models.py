@@ -189,7 +189,9 @@ class IntegrationConnection(Timestamped, Base):
     organization_id: Mapped[UUID] = mapped_column(
         ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
     )
-    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
     provider: Mapped[str] = mapped_column(String(40), nullable=False)
     display_label: Mapped[str | None] = mapped_column(String(160))
     secret_hash: Mapped[str] = mapped_column(Text, nullable=False)
