@@ -48,18 +48,57 @@ function authorized<T>(path: string, token: string, init: RequestInit = {}): Pro
 
 export const conversationApi = {
   list: (token: string) => authorized<Conversation[]>("/conversations", token),
-  create: (token: string, title = "New conversation") => authorized<Conversation>("/conversations", token, { method: "POST", body: JSON.stringify({ title }) }),
-  messages: (token: string, conversationId: string) => authorized<StoredMessage[]>(`/conversations/${conversationId}/messages`, token),
+  create: (token: string, title = "New conversation") =>
+    authorized<Conversation>("/conversations", token, { method: "POST", body: JSON.stringify({ title }) }),
+  update: (token: string, conversationId: string, title: string) =>
+    authorized<Conversation>(`/conversations/${conversationId}`, token, {
+      method: "PATCH",
+      body: JSON.stringify({ title }),
+    }),
+  remove: (token: string, conversationId: string) =>
+    authorized<void>(`/conversations/${conversationId}`, token, { method: "DELETE" }),
+  messages: (token: string, conversationId: string) =>
+    authorized<StoredMessage[]>(`/conversations/${conversationId}/messages`, token),
 };
 
 export const chatApi = {
-  send: (token: string, conversationId: string, content: string) => authorized<ChatResult>("/chat", token, { method: "POST", body: JSON.stringify({ conversation_id: conversationId, content }) }),
-  retry: (token: string, messageId: string) => authorized<ChatResult>(`/chat/messages/${messageId}/retry`, token, { method: "POST" }),
-  async stream(token: string, conversationId: string, content: string, onToken: (text: string) => void, signal: AbortSignal): Promise<void> {
-    const response = await fetch("/api/v1/chat/stream", { method: "POST", signal, headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ conversation_id: conversationId, content }) });
+  send: (token: string, conversationId: string, content: string) =>
+    authorized<ChatResult>("/chat", token, {
+      method: "POST",
+      body: JSON.stringify({ conversation_id: conversationId, content }),
+    }),
+  retry: (token: string, messageId: string) =>
+    authorized<ChatResult>(`/chat/messages/${messageId}/retry`, token, { method: "POST" }),
+  async stream(
+    token: string,
+    conversationId: string,
+    content: string,
+    onToken: (text: string) => void,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const response = await fetch("/api/v1/chat/stream", {
+      method: "POST",
+      signal,
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ conversation_id: conversationId, content }),
+    });
     if (!response.ok || !response.body) throw new ApiError("Unable to start response stream", response.status);
-    const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = "";
-    while (true) { const { done, value } = await reader.read(); if (done) break; buffer += decoder.decode(value, { stream: true }); const frames = buffer.split("\n\n"); buffer = frames.pop() ?? ""; for (const frame of frames) { if (frame.startsWith("event: token")) { const data = frame.split("\ndata: ")[1]; if (data) onToken((JSON.parse(data) as { text: string }).text); } } }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const frames = buffer.split("\n\n");
+      buffer = frames.pop() ?? "";
+      for (const frame of frames) {
+        if (frame.startsWith("event: token")) {
+          const data = frame.split("\ndata: ")[1];
+          if (data) onToken((JSON.parse(data) as { text: string }).text);
+        }
+      }
+    }
   },
 };
 
@@ -91,10 +130,59 @@ export type Preferences = {
 
 export type PreferencesPatch = Partial<Preferences>;
 export type Profile = { id: string; email: string; display_name: string; created_at: string };
-export type ModelOption = { id: string; label: string; description: string; provider: string; available: boolean; context_length: number };
-export type SessionSummary = { id: string; created_at: string; last_used_at: string | null; expires_at: string; current: boolean };
-export type UsageStats = { conversations: number; messages: number; input_tokens: number; output_tokens: number; first_activity_at: string | null; last_activity_at: string | null };
+export type ModelOption = {
+  id: string;
+  label: string;
+  description: string;
+  provider: string;
+  available: boolean;
+  context_length: number;
+};
+export type SessionSummary = {
+  id: string;
+  created_at: string;
+  last_used_at: string | null;
+  expires_at: string;
+  current: boolean;
+};
+export type UsageStats = {
+  conversations: number;
+  messages: number;
+  input_tokens: number;
+  output_tokens: number;
+  first_activity_at: string | null;
+  last_activity_at: string | null;
+};
 export type OperationResult = { ok: boolean; removed: number; detail: string };
+
+export type IntegrationSummary = {
+  id: string;
+  provider: string;
+  display_label: string | null;
+  secret_hint: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  last_verified_at: string | null;
+};
+
+export type ProviderCatalogItem = {
+  id: string;
+  name: string;
+  description: string;
+  auth_type: string;
+  scopes_hint: string;
+  docs_url: string;
+  icon: string;
+  connected: boolean;
+  connection: IntegrationSummary | null;
+};
+
+export type IntegrationActionResult = {
+  ok: boolean;
+  detail: string;
+  connection: IntegrationSummary | null;
+};
 
 export const DEFAULT_PREFERENCES: Preferences = {
   theme: "system",
@@ -117,6 +205,9 @@ export const DEFAULT_PREFERENCES: Preferences = {
   email_product_updates: false,
 };
 
+/** Minimum password length accepted by the API for register and password change. */
+export const MIN_PASSWORD_LENGTH = 8;
+
 export const settingsApi = {
   get: (token: string) => authorized<Preferences>("/settings", token),
   update: (token: string, patch: PreferencesPatch) =>
@@ -134,7 +225,10 @@ export const settingsApi = {
   updateProfile: (token: string, patch: { display_name?: string; email?: string }) =>
     authorized<Profile>("/settings/profile", token, { method: "PATCH", body: JSON.stringify(patch) }),
   changePassword: (token: string, current_password: string, new_password: string) =>
-    authorized<OperationResult>("/settings/password", token, { method: "POST", body: JSON.stringify({ current_password, new_password }) }),
+    authorized<OperationResult>("/settings/password", token, {
+      method: "POST",
+      body: JSON.stringify({ current_password, new_password }),
+    }),
 
   models: (token: string) => authorized<ModelOption[]>("/settings/models", token),
   sessions: (token: string) => authorized<SessionSummary[]>("/settings/sessions", token),
@@ -153,6 +247,23 @@ export const settingsApi = {
       headers: { Authorization: `Bearer ${token}` },
       body: JSON.stringify({ password, confirmation }),
     }),
+};
+
+export const integrationsApi = {
+  catalog: (token: string) => authorized<ProviderCatalogItem[]>("/integrations/catalog", token),
+  list: (token: string) => authorized<IntegrationSummary[]>("/integrations", token),
+  connect: (
+    token: string,
+    payload: { provider: string; access_token: string; display_label?: string; account_url?: string },
+  ) =>
+    authorized<IntegrationActionResult>("/integrations", token, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  verify: (token: string, provider: string) =>
+    authorized<IntegrationActionResult>(`/integrations/${provider}/verify`, token, { method: "POST" }),
+  disconnect: (token: string, provider: string) =>
+    authorized<IntegrationActionResult>(`/integrations/${provider}`, token, { method: "DELETE" }),
 };
 
 export const authApi = {

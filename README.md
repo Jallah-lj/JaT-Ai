@@ -43,9 +43,18 @@ Document parsing, durable queue dispatch, vector indexing, semantic retrieval, c
 - appearance controls — light/dark/system theme, five accent colours, text size, density, reduced motion
 - chat controls — default model, temperature, max tokens, custom system prompt, streaming, send-on-Enter
 - memory management — enable/disable plus add, remove, and clear individual memories
-- account security — profile editing, password rotation, active-session list with immediate revocation
+- account security — profile editing, password rotation (min 8 characters), active-session list with immediate revocation
 - data controls — usage statistics, JSON export, bulk conversation deletion, account deletion
+- integrations — connect GitHub and other systems with hashed access tokens
 - responsive settings UI (desktop, tablet, and full-screen mobile) with keyboard and screen-reader support
+
+### Workspace UX
+
+- JaT brand logo across auth, sidebar, empty state, assistant messages, and favicon
+- every chat gets a title (auto from first message, rename anytime)
+- search chats, delete chats, and open a per-chat options menu
+- attach files from the composer (text contents inlined into the prompt when readable)
+- working send control (↑) with clear ready/disabled states and stop-while-streaming
 
 ## Architecture
 

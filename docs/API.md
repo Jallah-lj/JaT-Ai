@@ -42,6 +42,32 @@ the authenticated user's own data.
 | `DELETE /api/v1/settings/conversations` | Permanently delete all conversations |
 | `POST /api/v1/settings/delete-account` | Deactivate the account (requires password + `DELETE`) |
 
+## Conversation and chat endpoints
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/v1/conversations` | Create a conversation (default title `New conversation`) |
+| `GET /api/v1/conversations` | List recent non-archived conversations |
+| `GET /api/v1/conversations/{id}` | Fetch one conversation |
+| `PATCH /api/v1/conversations/{id}` | Rename a conversation |
+| `DELETE /api/v1/conversations/{id}` | Archive (soft-delete) a conversation |
+| `GET /api/v1/conversations/{id}/messages` | Message history |
+| `POST /api/v1/chat` | Non-streaming chat turn; auto-titles untitled chats |
+| `POST /api/v1/chat/stream` | SSE token stream; auto-titles untitled chats |
+| `POST /api/v1/chat/messages/{id}/retry` | Retry a cancelled or failed assistant message |
+
+## Integration endpoints
+
+Connect external systems (GitHub, GitLab, Slack, Notion, Linear, Google Drive). Access tokens are hashed at rest; only a short hint is returned.
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/v1/integrations/catalog` | Provider catalog with connection status |
+| `GET /api/v1/integrations` | Connected integrations for the organization |
+| `POST /api/v1/integrations` | Connect or update a provider token |
+| `POST /api/v1/integrations/{provider}/verify` | Mark a stored connection as verified |
+| `DELETE /api/v1/integrations/{provider}` | Disconnect a provider |
+
 ### Validation and safety
 
 - `PATCH /settings` rejects unknown fields (`extra="forbid"`), so clients cannot smuggle

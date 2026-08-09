@@ -177,3 +177,25 @@ class Document(Base):
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     language: Mapped[str | None] = mapped_column(String(24))
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="pending")
+
+
+class IntegrationConnection(Timestamped, Base):
+    """External system connection. Token material is hashed and never returned."""
+
+    __tablename__ = "integration_connections"
+    __table_args__ = (UniqueConstraint("organization_id", "provider"),)
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    organization_id: Mapped[UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    provider: Mapped[str] = mapped_column(String(40), nullable=False)
+    display_label: Mapped[str | None] = mapped_column(String(160))
+    secret_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    secret_hint: Mapped[str] = mapped_column(String(8), nullable=False, default="")
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="connected")
+    metadata_json: Mapped[dict[str, object]] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict
+    )
+    last_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
