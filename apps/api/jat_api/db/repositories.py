@@ -93,3 +93,16 @@ async def write_audit_log(
             request_id=request_id,
         )
     )
+
+
+async def session_family_is_active(session: AsyncSession, user_id: UUID, family_id: UUID) -> bool:
+    """Report whether a refresh-session family is still usable for the given user."""
+    record = await session.scalar(
+        select(Session.id).where(
+            Session.user_id == user_id,
+            Session.family_id == family_id,
+            Session.revoked_at.is_(None),
+            Session.expires_at > datetime.now(UTC),
+        )
+    )
+    return record is not None
