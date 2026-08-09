@@ -77,6 +77,21 @@ beforeEach(() => {
       ]);
     }
     if (url.includes("/settings/sessions")) return mockJson([]);
+    if (url.includes("/integrations/catalog")) {
+      return mockJson([
+        {
+          id: "github",
+          name: "GitHub",
+          description: "Connect repositories.",
+          auth_type: "token",
+          scopes_hint: "repo",
+          docs_url: "https://github.com/settings/tokens",
+          icon: "github",
+          connected: false,
+          connection: null,
+        },
+      ]);
+    }
     if (url.includes("/settings/usage")) {
       return mockJson({
         conversations: 3,
@@ -103,7 +118,15 @@ describe("settings page", () => {
   it("renders every section tab", () => {
     renderSettings();
     const nav = screen.getByRole("navigation", { name: /settings sections/i });
-    for (const label of ["General", "Appearance", "Chat", "Memory", "Account", "Data controls"]) {
+    for (const label of [
+      "General",
+      "Appearance",
+      "Chat",
+      "Memory",
+      "Integrations",
+      "Account",
+      "Data controls",
+    ]) {
       expect(within(nav).getByRole("button", { name: new RegExp(label, "i") })).toBeTruthy();
     }
   });
@@ -193,17 +216,17 @@ describe("settings page", () => {
     expect((confirm as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it("requires matching passwords of at least 12 characters", async () => {
+  it("requires matching passwords of at least 8 characters", async () => {
     const person = userEvent.setup();
     renderSettings();
     await person.click(screen.getByRole("button", { name: /Account/i }));
     await person.type(screen.getByLabelText(/current password/i), "old-password");
     await person.type(screen.getByLabelText("New password"), "short");
-    expect(document.querySelector(".field-error")?.textContent).toMatch(/at least 12 characters/i);
+    expect(document.querySelector(".field-error")?.textContent).toMatch(/at least 8 characters/i);
     expect(screen.getByLabelText("New password").getAttribute("aria-invalid")).toBe("true");
 
     await person.clear(screen.getByLabelText("New password"));
-    await person.type(screen.getByLabelText("New password"), "a-long-enough-password");
+    await person.type(screen.getByLabelText("New password"), "long-enough");
     await person.type(screen.getByLabelText(/confirm new password/i), "different-password");
     expect(screen.getByText(/do not match/i)).toBeTruthy();
     expect(

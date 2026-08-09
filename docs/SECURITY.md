@@ -16,6 +16,14 @@
 
 Deploy only behind TLS. Store `JAT_JWT_SECRET`, database credentials, and service credentials in a managed secret store. Restrict `/metrics` to internal monitoring networks. Configure trusted proxies before using forwarded client-IP headers. Run migrations through reviewed deployment automation, not interactive production shells.
 
+## Password policy
+
+Registration and password changes require at least **8 characters** (Argon2id hashed). Prefer longer passphrases in production.
+
+## Integrations
+
+External connections (GitHub, GitLab, Slack, Notion, Linear, Google Drive) accept personal access tokens. Tokens are Argon2id-hashed at rest; only a short hint is returned to the client. Live OAuth and outbound provider calls are not yet enabled — connect/verify/disconnect manage stored credentials only.
+
 ## Explicitly not yet shipped
 
-MFA, email verification delivery, API-key issuance endpoints, RBAC-protected resources, file uploads, tool execution, RAG, and model integrations are not present in Phase 1.
+MFA, email verification delivery, API-key issuance endpoints, RBAC-protected resources, durable file uploads, tool execution, full RAG retrieval, and live OAuth provider probes are not present yet.
