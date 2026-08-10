@@ -372,11 +372,16 @@ async def list_models(request: Request, user: User = Depends(current_user)) -> l
     """Advertise selectable models based on server configuration, never client claims."""
     settings = request.app.state.settings
     context_length = settings.model_context_length
+    is_deterministic = settings.model_provider == "deterministic"
     options = [
         ModelOption(
             id=settings.model_name,
-            label="JaT development",
-            description="Deterministic development provider for testing the pipeline.",
+            label="JaT development" if is_deterministic else settings.model_name,
+            description=(
+                "Deterministic development provider for testing the pipeline."
+                if is_deterministic
+                else f"Default {settings.model_provider} model configured by the operator."
+            ),
             provider=settings.model_provider,
             available=True,
             context_length=context_length,
