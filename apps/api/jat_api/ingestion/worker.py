@@ -37,7 +37,11 @@ async def run_worker() -> None:
     database = Database(settings.database_url)
     redis = RedisClient(settings.redis_url)
     object_store = LocalObjectStore.for_settings(settings)
-    embedder = create_embedding_provider(settings.embedding_provider)
+    embedder = create_embedding_provider(
+        settings.embedding_provider,
+        endpoint=getattr(settings, "embedding_endpoint", None) or settings.model_endpoint,
+        model=getattr(settings, "embedding_model", None),
+    )
     logger.info("ingestion_worker_started", queue=settings.ingestion_queue)
     try:
         while True:
