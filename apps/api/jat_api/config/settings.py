@@ -52,6 +52,14 @@ class Settings(BaseSettings):
     request_max_bytes: int = Field(default=1_048_576, ge=1_024, le=52_428_800)
     auth_rate_limit_attempts: int = Field(default=10, ge=1, le=100)
     auth_rate_limit_window_seconds: int = Field(default=60, ge=1, le=3600)
+    # Guest / trial access — visitors can experiment with the LLM before creating
+    # an account. Enforce a message budget and a time window; when either is
+    # exhausted the client is asked to sign up (guests can convert and keep
+    # their conversations).
+    guest_enabled: bool = True
+    guest_message_limit: int = Field(default=10, ge=1, le=1000)
+    guest_ttl_hours: int = Field(default=24, ge=1, le=720)
+    guest_max_conversations: int = Field(default=5, ge=1, le=100)
     service_version: str = "0.1.0"
     model_provider: str = "ollama"
     model_name: str = "llama3.1:latest"

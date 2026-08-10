@@ -95,7 +95,8 @@ class ProfileUpdate(BaseModel):
 
 class ProfileResponse(BaseModel):
     id: UUID
-    email: EmailStr
+    # Plain string: guest identities carry opaque reserved-domain addresses.
+    email: str
     display_name: str
     created_at: datetime
 

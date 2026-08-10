@@ -11,7 +11,12 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from jat_api.auth.dependencies import current_session_family, current_user, get_db_session
+from jat_api.auth.dependencies import (
+    current_session_family,
+    current_user,
+    get_db_session,
+    require_person,
+)
 from jat_api.auth.security import hash_password, verify_password
 from jat_api.db.models import (
     Conversation,
@@ -188,7 +193,7 @@ def profile_of(user: User) -> ProfileResponse:
 
 
 @router.get("/profile", response_model=ProfileResponse)
-async def get_profile(user: User = Depends(current_user)) -> ProfileResponse:
+async def get_profile(user: User = Depends(require_person)) -> ProfileResponse:
     return profile_of(user)
 
 
@@ -196,7 +201,7 @@ async def get_profile(user: User = Depends(current_user)) -> ProfileResponse:
 async def update_profile(
     payload: ProfileUpdate,
     request: Request,
-    user: User = Depends(current_user),
+    user: User = Depends(require_person),
     db: AsyncSession = Depends(get_db_session),
 ) -> ProfileResponse:
     if payload.display_name is not None:
@@ -237,7 +242,7 @@ async def update_profile(
 async def change_password(
     payload: PasswordChange,
     request: Request,
-    user: User = Depends(current_user),
+    user: User = Depends(require_person),
     family_id: UUID | None = Depends(current_session_family),
     db: AsyncSession = Depends(get_db_session),
 ) -> OperationResult:
@@ -283,7 +288,7 @@ async def change_password(
 
 @router.get("/sessions", response_model=list[SessionSummary])
 async def list_sessions(
-    user: User = Depends(current_user),
+    user: User = Depends(require_person),
     family_id: UUID | None = Depends(current_session_family),
     db: AsyncSession = Depends(get_db_session),
 ) -> list[SessionSummary]:
@@ -312,7 +317,7 @@ async def list_sessions(
 @router.post("/sessions/revoke-others", response_model=OperationResult)
 async def revoke_other_sessions(
     request: Request,
-    user: User = Depends(current_user),
+    user: User = Depends(require_person),
     family_id: UUID | None = Depends(current_session_family),
     db: AsyncSession = Depends(get_db_session),
 ) -> OperationResult:
@@ -340,7 +345,7 @@ async def revoke_other_sessions(
 async def revoke_session(
     session_id: UUID,
     request: Request,
-    user: User = Depends(current_user),
+    user: User = Depends(require_person),
     db: AsyncSession = Depends(get_db_session),
 ) -> OperationResult:
     record = await db.scalar(
@@ -477,7 +482,7 @@ async def usage(
 
 @router.get("/export")
 async def export_data(
-    user: User = Depends(current_user), db: AsyncSession = Depends(get_db_session)
+    user: User = Depends(require_person), db: AsyncSession = Depends(get_db_session)
 ) -> dict[str, Any]:
     """Return a portable copy of the account's own data."""
     preferences = await load_preferences(db, user.id)
@@ -558,7 +563,7 @@ async def delete_all_conversations(
 async def delete_account(
     payload: AccountDeletion,
     request: Request,
-    user: User = Depends(current_user),
+    user: User = Depends(require_person),
     db: AsyncSession = Depends(get_db_session),
 ) -> Response:
     """Irreversibly deactivate the account after re-authentication."""

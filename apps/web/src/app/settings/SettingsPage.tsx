@@ -259,6 +259,8 @@ function GeneralTab({
         id: profile.id,
         email: profile.email,
         display_name: profile.display_name,
+        // Profile settings are person-only (guests are rejected upstream).
+        kind: "person",
       });
       announce("saved", "Profile updated");
     } catch (caught) {

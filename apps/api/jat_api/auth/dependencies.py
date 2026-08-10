@@ -40,6 +40,19 @@ async def current_user(
     return user
 
 
+async def require_person(user: User = Depends(current_user)) -> User:
+    """Reject guest identities on account-management endpoints."""
+    from jat_api.guest import is_guest
+
+    if is_guest(user):
+        raise HTTPException(
+            status_code=403,
+            detail="Guest accounts cannot change account settings. "
+            "Create an account to unlock them.",
+        )
+    return user
+
+
 async def current_session_family(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
