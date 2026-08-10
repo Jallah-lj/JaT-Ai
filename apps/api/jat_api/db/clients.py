@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from redis.asyncio import Redis  # type: ignore[import-not-found]
+from redis.asyncio import Redis
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
@@ -112,7 +112,7 @@ def _collect_asyncpg_errors() -> tuple[type[BaseException], ...]:
     """
     classes: list[type[BaseException]] = [ConnectionRefusedError, TimeoutError, OSError]
     try:
-        import asyncpg  # type: ignore[import-not-found]
+        import asyncpg  # type: ignore[import-untyped]
     except Exception:  # pragma: no cover - asyncpg missing (unusual)
         return tuple(classes)
     names = (
@@ -182,7 +182,7 @@ _REDIS_ERRORS: tuple[type[BaseException], ...] | None = None
 def _collect_redis_errors() -> tuple[type[BaseException], ...]:
     classes: list[type[BaseException]] = [ConnectionRefusedError, TimeoutError, OSError]
     try:
-        import redis.exceptions as rex  # type: ignore[import-not-found]
+        import redis.exceptions as rex
     except Exception:  # pragma: no cover
         return tuple(classes)
     names = (

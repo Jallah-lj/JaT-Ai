@@ -19,7 +19,7 @@ class HealthResponse(BaseModel):
     services: dict[str, ServiceStatus] | None = None
 
 
-async def _probe(svc: object, name: str) -> ServiceStatus:
+async def _probe(svc: object, default_name: str) -> tuple[str, ServiceStatus]:
     """Probe a backing service, tolerating both old (ping) and new (ping_detailed) clients."""
     detailed = getattr(svc, "ping_detailed", None)
     if callable(detailed):
@@ -27,16 +27,17 @@ async def _probe(svc: object, name: str) -> ServiceStatus:
         # Supports both PingResult (has .ok/.detail/.name) and plain booleans.
         ok = bool(getattr(result, "ok", result))
         detail = getattr(result, "detail", None)
-        svc_name = getattr(result, "name", name)
-        return ServiceStatus(ok=ok, detail=detail), svc_name
+        svc_name = str(getattr(result, "name", default_name))
+        return svc_name, ServiceStatus(ok=ok, detail=detail)
     # Legacy client only exposes ``ping() -> bool``.
-    ok = bool(await svc.ping())  # type: ignore[attr-defined]
-    return ServiceStatus(ok=ok, detail=None if ok else "unreachable"), name
+    ping = getattr(svc, "ping", None)
+    ok = bool(await ping()) if callable(ping) else False
+    return default_name, ServiceStatus(ok=ok, detail=None if ok else "unreachable")
 
 
 async def _service_checks(request: Request) -> dict[str, ServiceStatus]:
-    db_status, db_name = await _probe(request.app.state.database, "postgres")
-    rd_status, rd_name = await _probe(request.app.state.redis, "redis")
+    db_name, db_status = await _probe(request.app.state.database, "postgres")
+    rd_name, rd_status = await _probe(request.app.state.redis, "redis")
     return {db_name: db_status, rd_name: rd_status}
 
 
