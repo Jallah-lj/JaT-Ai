@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from jat_api.db.models import Organization, OrganizationMembership, Session, User
+from jat_api.db.models import Conversation, Organization, OrganizationMembership, Session, User
 
 
 async def find_user_by_email(session: AsyncSession, email: str) -> User | None:
@@ -28,6 +28,52 @@ async def create_user_with_personal_organization(
         OrganizationMembership(organization_id=organization.id, user_id=user.id, role="owner")
     )
     return user
+
+
+async def create_guest_user(session: AsyncSession, *, email: str, password_hash: str) -> User:
+    """Create an anonymous trial identity with its own sandbox organization.
+
+    Guests carry ``kind = "guest"`` so quota enforcement and conversion logic
+    can find them cheaply; the email is an opaque per-session address and the
+    password hash is random so the account can never be signed into directly.
+    """
+    user = User(
+        email=email,
+        password_hash=password_hash,
+        display_name="Guest",
+        kind="guest",
+        status="active",
+    )
+    organization = Organization(name="Guest workspace", slug=f"guest-{user.id.hex[:12]}")
+    session.add_all([user, organization])
+    await session.flush()
+    session.add(
+        OrganizationMembership(organization_id=organization.id, user_id=user.id, role="owner")
+    )
+    return user
+
+
+async def transfer_conversations_to_user(
+    session: AsyncSession, *, from_user_id: UUID, to_user_id: UUID, to_organization_id: UUID
+) -> None:
+    """Move every conversation a guest created into a new account's workspace."""
+    await session.execute(
+        update(Conversation)
+        .where(Conversation.created_by_user_id == from_user_id)
+        .values(
+            created_by_user_id=to_user_id,
+            organization_id=to_organization_id,
+        )
+    )
+
+
+async def revoke_all_sessions_for_user(session: AsyncSession, user_id: UUID) -> None:
+    """Revoke every refresh session a user owns (used when guests convert)."""
+    await session.execute(
+        update(Session)
+        .where(Session.user_id == user_id, Session.revoked_at.is_(None))
+        .values(revoked_at=datetime.now(UTC))
+    )
 
 
 async def create_session(

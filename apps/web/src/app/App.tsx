@@ -17,6 +17,7 @@ import {
   MIN_PASSWORD_LENGTH,
   settingsApi,
   type Conversation,
+  type GuestStatus,
   type ModelOption,
   type Preferences,
   type User,
@@ -32,6 +33,15 @@ type AuthScreenProps = {
   mode: Mode;
   onModeChange: (mode: Mode) => void;
   onAuthenticated: (token: string, user: User) => void;
+  /** Global guest switch + trial budget, fetched anonymously for the CTA. */
+  guestStatus?: GuestStatus | null;
+  onStartGuest: () => void;
+  guestStarting?: boolean;
+  guestError?: string | null;
+  /** Set when a guest is mid-conversion: registration claims their chats. */
+  guestToken?: string;
+  /** Shown while a guest session is paused behind the auth screen. */
+  onBackToGuest?: () => void;
 };
 
 type ChatMessage = {
@@ -110,6 +120,13 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+/** Map a guest-quota API error code to a lock reason, or null. */
+function guestCodeOf(error: ApiError): "limit" | "expired" | null {
+  if (error.code === "guest_limit_reached") return "limit";
+  if (error.code === "guest_expired" || error.code === "guest_disabled") return "expired";
+  return null;
+}
+
 async function readFileAsAttachment(file: File): Promise<AttachedFile> {
   const id = `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2, 8)}`;
   const isText =
@@ -140,13 +157,26 @@ function composeMessageWithFiles(text: string, files: AttachedFile[]): string {
   return [text.trim(), ...blocks].filter(Boolean).join("\n\n");
 }
 
-function AuthScreen({ mode, onModeChange, onAuthenticated }: AuthScreenProps): ReactElement {
+function AuthScreen({
+  mode,
+  onModeChange,
+  onAuthenticated,
+  guestStatus,
+  onStartGuest,
+  guestStarting,
+  guestError,
+  guestToken,
+  onBackToGuest,
+}: AuthScreenProps): ReactElement {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const registering = mode === "register";
+  const converting = Boolean(guestToken);
+  const trialEnabled = guestStatus?.enabled ?? false;
+  const trialLimit = guestStatus?.message_limit ?? 0;
 
   async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -154,7 +184,7 @@ function AuthScreen({ mode, onModeChange, onAuthenticated }: AuthScreenProps): R
     setLoading(true);
     try {
       const session = registering
-        ? await authApi.register({ email, password, display_name: name })
+        ? await authApi.register({ email, password, display_name: name, guest_token: guestToken })
         : await authApi.login({ email, password });
       onAuthenticated(session.access_token, session.user);
     } catch (caught) {
@@ -193,10 +223,14 @@ function AuthScreen({ mode, onModeChange, onAuthenticated }: AuthScreenProps): R
           <div className="auth-card-brand">
             <BrandMark size={36} />
           </div>
-          <p className="eyebrow">WELCOME TO JAT</p>
+          <p className="eyebrow">{converting ? "FINISH YOUR ACCOUNT" : "WELCOME TO JAT"}</p>
           <h2>{registering ? "Create your workspace" : "Welcome back"}</h2>
           <p className="muted">
-            {registering ? "Start with a personal, secure workspace." : "Sign in to continue to your workspace."}
+            {converting
+              ? "Your trial chats will be saved to this account automatically."
+              : registering
+                ? "Start with a personal, secure workspace."
+                : "Sign in to continue to your workspace."}
           </p>
           <form onSubmit={submit} className="auth-form">
             {registering && (
@@ -248,6 +282,44 @@ function AuthScreen({ mode, onModeChange, onAuthenticated }: AuthScreenProps): R
               <span>→</span>
             </button>
           </form>
+          {!converting && trialEnabled && (
+            <>
+              <div className="auth-divider" role="separator">
+                <span>or</span>
+              </div>
+              <button
+                type="button"
+                className="guest-cta"
+                disabled={guestStarting}
+                onClick={onStartGuest}
+              >
+                <span className="guest-cta-mark" aria-hidden="true">
+                  <img src={logoUrl} alt="" />
+                </span>
+                <span className="guest-cta-copy">
+                  <strong>{guestStarting ? "Starting your trial…" : "Try JaT free — no account"}</strong>
+                  <small>
+                    {trialLimit > 0
+                      ? `${trialLimit} free messages · chats can be saved when you sign up`
+                      : "No email, no password — just the LLM"}
+                  </small>
+                </span>
+                <span className="guest-cta-arrow" aria-hidden="true">
+                  →
+                </span>
+              </button>
+              {guestError && (
+                <p role="alert" className="form-error guest-cta-error">
+                  {guestError}
+                </p>
+              )}
+            </>
+          )}
+          {converting && onBackToGuest && (
+            <button type="button" className="back-to-guest" onClick={onBackToGuest}>
+              ← Back to your guest session
+            </button>
+          )}
           <p className="switch-auth">
             {registering ? "Already have an account?" : "New to JaT?"}{" "}
             <button type="button" onClick={() => onModeChange(registering ? "login" : "register")}>
@@ -267,6 +339,11 @@ type WorkspaceProps = {
   preferences: Preferences;
   onPreferencesChange: (preferences: Preferences) => void;
   onProfileChange: (user: User) => void;
+  isGuest: boolean;
+  guestStatus: GuestStatus | null;
+  onGuestStatusChange: (status: GuestStatus) => void;
+  onRequestAccount: () => void;
+  onRequestLogin: () => void;
 };
 
 function Workspace({
@@ -276,6 +353,11 @@ function Workspace({
   preferences,
   onPreferencesChange,
   onProfileChange,
+  isGuest,
+  guestStatus,
+  onGuestStatusChange,
+  onRequestAccount,
+  onRequestLogin,
 }: WorkspaceProps): ReactElement {
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -296,6 +378,7 @@ function Workspace({
   const [attachments, setAttachments] = useState<AttachedFile[]>([]);
   const [models, setModels] = useState<ModelOption[]>([]);
   const [composerError, setComposerError] = useState("");
+  const [guestLocked, setGuestLocked] = useState<"limit" | "expired" | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -319,6 +402,35 @@ function Workspace({
       .then(setModels)
       .catch(() => undefined);
   }, [token]);
+
+  // Guest trial budget: fetch on entry, then keep the expiry clock honest while
+  // the session is open so the sign-up prompt appears the moment it runs out.
+  useEffect(() => {
+    if (!isGuest || !token) return;
+    let active = true;
+    const refresh = (): void => {
+      void authApi
+        .guestStatus(token)
+        .then((status) => {
+          if (!active) return;
+          onGuestStatusChange(status);
+          if (status.kind !== "guest") return;
+          const expired = status.expires_at !== null && new Date(status.expires_at) <= new Date();
+          if (expired) {
+            setGuestLocked("expired");
+          } else if (status.message_limit > 0 && status.messages_used >= status.message_limit) {
+            setGuestLocked("limit");
+          }
+        })
+        .catch(() => undefined);
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 60_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [isGuest, token, onGuestStatusChange]);
 
   useEffect(() => {
     if (!active) {
@@ -409,7 +521,13 @@ function Workspace({
       setMenuFor(null);
       window.setTimeout(() => composerRef.current?.focus(), 0);
     } catch (caught) {
-      setComposerError(caught instanceof ApiError ? caught.message : "Could not start a new chat.");
+      if (caught instanceof ApiError && guestCodeOf(caught) !== null) {
+        setGuestLocked(guestCodeOf(caught));
+      } else {
+        setComposerError(
+          caught instanceof ApiError ? caught.message : "Could not start a new chat.",
+        );
+      }
     }
   }
 
@@ -559,7 +677,12 @@ function Workspace({
 
       if (preferences.sound_on_response) playChime();
     } catch (error) {
-      if (!(error instanceof DOMException && error.name === "AbortError")) {
+      if (error instanceof ApiError && guestCodeOf(error) !== null) {
+        setGuestLocked(guestCodeOf(error));
+        if (token) {
+          void authApi.guestStatus(token).then(onGuestStatusChange).catch(() => undefined);
+        }
+      } else if (!(error instanceof DOMException && error.name === "AbortError")) {
         setMessages((items) => [
           ...items,
           { role: "assistant", content: "JaT could not complete that request. Please try again." },
@@ -615,7 +738,12 @@ function Workspace({
     setNavOpen(false);
   }
 
-  const canSend = !sending && (draft.trim().length > 0 || attachments.length > 0);
+  const locked = guestLocked !== null;
+  const guestRemaining = guestStatus
+    ? Math.max(0, guestStatus.message_limit - guestStatus.messages_used)
+    : null;
+  const canSend =
+    !sending && !locked && (draft.trim().length > 0 || attachments.length > 0);
   const headerTitle = active?.title ?? "New conversation";
 
   return (
@@ -771,18 +899,39 @@ function Workspace({
         </nav>
 
         <div className="sidebar-bottom">
-          <button type="button" onClick={() => openSettings("integrations")}>
-            ⧉ Integrations
-          </button>
-          <button type="button" onClick={() => openSettings("data")}>
-            ◌ Knowledge bases
-          </button>
-          <button type="button" onClick={() => openSettings("chat")}>
-            ⌁ Models <em>Phase 2</em>
-          </button>
-          <button type="button" onClick={() => openSettings()}>
-            ⚙ Settings
-          </button>
+          {isGuest ? (
+            <div className="guest-side-card">
+              <p className="eyebrow">GUEST MODE</p>
+              <p className="guest-side-copy">
+                {locked
+                  ? "Your free trial has finished — create an account to keep chatting."
+                  : guestRemaining !== null
+                    ? `${guestRemaining} of ${guestStatus?.message_limit ?? 0} free messages left.`
+                    : "Try JaT free — no account needed."}
+              </p>
+              <button type="button" className="guest-side-cta" onClick={onRequestAccount}>
+                Create free account
+              </button>
+              <button type="button" className="guest-side-ghost" onClick={onRequestLogin}>
+                Sign in instead
+              </button>
+            </div>
+          ) : (
+            <>
+              <button type="button" onClick={() => openSettings("integrations")}>
+                ⧉ Integrations
+              </button>
+              <button type="button" onClick={() => openSettings("data")}>
+                ◌ Knowledge bases
+              </button>
+              <button type="button" onClick={() => openSettings("chat")}>
+                ⌁ Models <em>Phase 2</em>
+              </button>
+              <button type="button" onClick={() => openSettings()}>
+                ⚙ Settings
+              </button>
+            </>
+          )}
         </div>
       </aside>
 
@@ -802,6 +951,11 @@ function Workspace({
             <h2 title={headerTitle}>{headerTitle}</h2>
           </div>
           <div className="chat-header-actions">
+            {isGuest && guestRemaining !== null && (
+              <span className="guest-chip" title="Free trial messages remaining">
+                Guest · {guestRemaining}/{guestStatus?.message_limit ?? 0}
+              </span>
+            )}
             {active && (
               <button
                 type="button"
@@ -834,6 +988,50 @@ function Workspace({
             </select>
           </div>
         </header>
+
+        {isGuest && (
+          <div className={`guest-banner ${locked ? "locked" : ""}`}>
+            <div className="guest-banner-copy">
+              <span className="guest-banner-label">
+                {locked
+                  ? guestLocked === "expired"
+                    ? "TRIAL EXPIRED"
+                    : "TRIAL COMPLETE"
+                  : "GUEST TRIAL"}
+              </span>
+              <p>
+                {locked
+                  ? guestLocked === "expired"
+                    ? "Your free trial session has expired."
+                    : "You've used all your free messages."
+                  : guestRemaining !== null && guestStatus
+                    ? `${guestRemaining} of ${guestStatus.message_limit} free messages left`
+                    : "Exploring JaT free — no account needed"}
+                {!locked && " · create an account to keep your chats and settings."}
+              </p>
+            </div>
+            <div className="guest-banner-actions">
+              <button type="button" className="guest-banner-primary" onClick={onRequestAccount}>
+                Create account
+              </button>
+              <button type="button" className="guest-banner-ghost" onClick={onRequestLogin}>
+                Sign in
+              </button>
+            </div>
+            {guestStatus && guestStatus.message_limit > 0 && (
+              <div className="guest-meter" aria-hidden="true">
+                <i
+                  style={{
+                    width: `${Math.min(
+                      100,
+                      (guestStatus.messages_used / guestStatus.message_limit) * 100,
+                    )}%`,
+                  }}
+                />
+              </div>
+            )}
+          </div>
+        )}
 
         <div ref={messageListRef} className={messages.length ? "message-list" : "empty-chat"}>
           {messages.length ? (
@@ -894,7 +1092,11 @@ function Workspace({
               </div>
               <p className="eyebrow">THE JAT FOUNDATION</p>
               <h1>How can I help?</h1>
-              <p>Ask a question, attach a file, or connect GitHub from Settings → Integrations.</p>
+              <p>
+                {isGuest
+                  ? "Ask anything, attach a file, or pick a prompt below."
+                  : "Ask a question, attach a file, or connect GitHub from Settings → Integrations."}
+              </p>
               <div className="suggestions">
                 <button type="button" onClick={() => setDraft("Explain the JaT architecture.")}>
                   Explore the architecture <span>↗</span>
@@ -902,14 +1104,20 @@ function Workspace({
                 <button type="button" onClick={() => setDraft("Review the security controls.")}>
                   Review security controls <span>↗</span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    openSettings("integrations");
-                  }}
-                >
-                  Connect GitHub <span>↗</span>
-                </button>
+                {isGuest ? (
+                  <button type="button" onClick={() => setDraft("Suggest three weekend project ideas I can build in an afternoon.")}>
+                    Brainstorm ideas <span>↗</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      openSettings("integrations");
+                    }}
+                  >
+                    Connect GitHub <span>↗</span>
+                  </button>
+                )}
               </div>
             </>
           )}
@@ -939,7 +1147,7 @@ function Workspace({
               {composerError}
             </p>
           )}
-          <div className="composer">
+          <div className={`composer ${locked ? "locked" : ""}`}>
             <input
               ref={fileInputRef}
               type="file"
@@ -954,7 +1162,7 @@ function Workspace({
               className="composer-attach"
               aria-label="Add files"
               title="Add files"
-              disabled={sending}
+              disabled={sending || locked}
               onClick={() => fileInputRef.current?.click()}
             >
               ＋
@@ -970,8 +1178,8 @@ function Workspace({
                 el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
               }}
               onKeyDown={onComposerKeyDown}
-              placeholder="Ask JaT anything…"
-              disabled={sending}
+              placeholder={locked ? "Create an account to keep chatting" : "Ask JaT anything…"}
+              disabled={sending || locked}
               aria-label="Message"
             />
             <button
@@ -991,11 +1199,40 @@ function Workspace({
               {sending ? "■" : "↑"}
             </button>
           </div>
-          <p className="composer-hint">
-            {preferences.send_on_enter ? "Enter to send · Shift+Enter for newline" : "⌘/Ctrl+Enter to send"}
-            {" · "}
-            Attach files with ＋
-          </p>
+          {locked ? (
+            <div className="guest-lock" role="dialog" aria-modal="true" aria-labelledby="guest-lock-title">
+              <div className="guest-lock-card">
+                <div className="orbit guest-lock-orbit">
+                  <img src={logoUrl} alt="" className="orbit-logo" />
+                </div>
+                <p className="eyebrow">FREE TRIAL COMPLETE</p>
+                <h3 id="guest-lock-title">
+                  {guestLocked === "expired"
+                    ? "Your trial session expired"
+                    : "You've used all your free messages"}
+                </h3>
+                <p className="guest-lock-copy">
+                  {guestLocked === "expired"
+                    ? "Your free trial window has closed. Create an account to pick up right where you left off — your conversation history carries over automatically."
+                    : "Create a free account to keep chatting. Everything from your trial — conversations, files, and settings — carries over automatically."}
+                </p>
+                <div className="guest-lock-actions">
+                  <button type="button" className="guest-lock-cta" onClick={onRequestAccount}>
+                    Create free account <span>→</span>
+                  </button>
+                  <button type="button" className="ghost-action" onClick={onRequestLogin}>
+                    Sign in
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <p className="composer-hint">
+              {preferences.send_on_enter ? "Enter to send · Shift+Enter for newline" : "⌘/Ctrl+Enter to send"}
+              {" · "}
+              Attach files with ＋
+            </p>
+          )}
         </div>
       </section>
 
@@ -1012,20 +1249,33 @@ function Workspace({
         {menuOpen && (
           <div className="profile-menu">
             <strong>{user.display_name}</strong>
-            <small>{user.email}</small>
+            <small>{isGuest ? "Guest trial session" : user.email}</small>
             <hr />
-            <button type="button" onClick={() => openSettings()}>
-              Settings
-            </button>
-            <button type="button" onClick={() => openSettings("integrations")}>
-              Integrations
-            </button>
             <button type="button" onClick={() => void newConversation()}>
               New chat
             </button>
+            {isGuest ? (
+              <>
+                <button type="button" className="profile-primary" onClick={onRequestAccount}>
+                  Create account
+                </button>
+                <button type="button" onClick={onRequestLogin}>
+                  Sign in
+                </button>
+              </>
+            ) : (
+              <>
+                <button type="button" onClick={() => openSettings()}>
+                  Settings
+                </button>
+                <button type="button" onClick={() => openSettings("integrations")}>
+                  Integrations
+                </button>
+              </>
+            )}
             <hr />
             <button type="button" onClick={onLogout}>
-              Sign out
+              {isGuest ? "Exit guest mode" : "Sign out"}
             </button>
           </div>
         )}
@@ -1071,6 +1321,12 @@ export function App(): ReactElement {
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [preferences, setPreferences] = useState<Preferences>(readCachedPreferences);
+  const [guestStatus, setGuestStatus] = useState<GuestStatus | null>(null);
+  const [guestStarting, setGuestStarting] = useState(false);
+  const [guestError, setGuestError] = useState<string | null>(null);
+  // While set, the auth screen sits on top of a still-live guest session so
+  // conversion keeps the trial chats (or the user can back out).
+  const [authOverride, setAuthOverride] = useState<{ mode: Mode; guestToken?: string } | null>(null);
 
   const updatePreferences = useCallback((next: Preferences) => {
     setPreferences(next);
@@ -1088,12 +1344,31 @@ export function App(): ReactElement {
     return () => query.removeEventListener("change", onChange);
   }, [preferences]);
 
+  // Anonymous probe: decide whether the "try it free" path is available at all.
+  useEffect(() => {
+    let active = true;
+    void authApi
+      .guestStatus()
+      .then((status) => {
+        if (active && !token) setGuestStatus(status);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [token]);
+
   useEffect(() => {
     void authApi
       .refresh()
       .then((session) => {
         setToken(session.access_token);
         setUser(session.user);
+        setGuestStatus(null);
+        void authApi
+          .guestStatus(session.access_token)
+          .then(setGuestStatus)
+          .catch(() => undefined);
       })
       .catch(() => undefined);
   }, []);
@@ -1104,22 +1379,85 @@ export function App(): ReactElement {
     void settingsApi.get(token).then(updatePreferences).catch(() => undefined);
   }, [token, updatePreferences]);
 
+  async function startGuest(): Promise<void> {
+    setGuestStarting(true);
+    setGuestError(null);
+    try {
+      const session = await authApi.guest();
+      setToken(session.access_token);
+      setUser(session.user);
+      setMode("login");
+      setGuestStatus(null);
+      void authApi
+        .guestStatus(session.access_token)
+        .then(setGuestStatus)
+        .catch(() => undefined);
+    } catch (caught) {
+      if (caught instanceof ApiError && caught.status === 403) {
+        setGuestStatus((current) =>
+          current
+            ? { ...current, enabled: false }
+            : {
+                enabled: false,
+                kind: "anonymous",
+                message_limit: 0,
+                messages_used: 0,
+                conversation_limit: 0,
+                conversations: 0,
+                expires_at: null,
+              },
+        );
+      }
+      setGuestError(
+        caught instanceof ApiError
+          ? caught.message
+          : "Could not start a trial session. Try again shortly.",
+      );
+    } finally {
+      setGuestStarting(false);
+    }
+  }
+
   function signOut(): void {
     void authApi.logout().finally(() => {
       setToken(null);
       setUser(null);
+      setAuthOverride(null);
+      setGuestStatus(null);
     });
   }
 
-  if (!token || !user) {
+  const isGuest = (user?.kind ?? "person") === "guest";
+  const showAuth = !token || !user || authOverride !== null;
+
+  if (showAuth) {
     return (
       <AuthScreen
-        mode={mode}
-        onModeChange={setMode}
+        mode={authOverride?.mode ?? mode}
+        onModeChange={(nextMode) => {
+          if (authOverride) {
+            setAuthOverride({ ...authOverride, mode: nextMode });
+          } else {
+            setMode(nextMode);
+          }
+        }}
         onAuthenticated={(nextToken, nextUser) => {
           setToken(nextToken);
           setUser(nextUser);
+          setMode("login");
+          setAuthOverride(null);
+          setGuestStatus(null);
+          void authApi
+            .guestStatus(nextToken)
+            .then(setGuestStatus)
+            .catch(() => undefined);
         }}
+        guestStatus={guestStatus}
+        onStartGuest={() => void startGuest()}
+        guestStarting={guestStarting}
+        guestError={guestError}
+        guestToken={authOverride?.guestToken}
+        onBackToGuest={authOverride ? () => setAuthOverride(null) : undefined}
       />
     );
   }
@@ -1131,6 +1469,11 @@ export function App(): ReactElement {
       preferences={preferences}
       onPreferencesChange={updatePreferences}
       onProfileChange={setUser}
+      isGuest={isGuest}
+      guestStatus={guestStatus}
+      onGuestStatusChange={setGuestStatus}
+      onRequestAccount={() => setAuthOverride({ mode: "register", guestToken: token })}
+      onRequestLogin={() => setAuthOverride({ mode: "login" })}
     />
   );
 }

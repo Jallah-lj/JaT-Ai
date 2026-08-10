@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from jat_api.auth.dependencies import current_user, get_db_session
 from jat_api.db.models import Conversation, Message, MessagePart, OrganizationMembership, User
 from jat_api.db.repositories import write_audit_log
+from jat_api.guest import enforce_guest_conversation_cap, enforce_guest_quota
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -62,12 +63,15 @@ async def create_conversation(
     user: User = Depends(current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> ConversationResponse:
+    settings = request.app.state.settings
+    await enforce_guest_quota(db, user, settings)
+    await enforce_guest_conversation_cap(db, user, settings)
     organization_id = await organization_for_user(db, user)
     conversation = Conversation(
         organization_id=organization_id,
         created_by_user_id=user.id,
         title=payload.title.strip(),
-        model=payload.model or request.app.state.settings.model_name,
+        model=payload.model or settings.model_name,
     )
     db.add(conversation)
     await write_audit_log(

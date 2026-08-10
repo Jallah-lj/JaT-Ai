@@ -41,6 +41,11 @@ class User(Timestamped, Base):
     password_hash: Mapped[str] = mapped_column(Text, nullable=False)
     display_name: Mapped[str] = mapped_column(String(120), nullable=False)
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="active")
+    # Identity kind: "person" for signed-up accounts, "guest" for anonymous
+    # trial sessions that can be converted (or expired) without an email.
+    kind: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="person", server_default="person"
+    )
     email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 

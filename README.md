@@ -60,6 +60,26 @@ What Phase 3 still lacks: PDF/JSON/CSV and binary parsers, at-least-once queue s
 - attach files from the composer (text contents inlined into the prompt when readable)
 - working send control (↑) with clear ready/disabled states and stop-while-streaming
 
+### Guest (trial) access — try the LLM before signing up
+
+Visitors can experiment with the LLM without creating an account, in the same
+flow most AI platforms offer:
+
+- **Try it free** CTA on the auth screen starts an anonymous trial session in
+  one click — no email, no password.
+- Guests get a message budget and a time window (`JAT_GUEST_MESSAGE_LIMIT`,
+  `JAT_GUEST_TTL_HOURS`) with a live usage banner, a header chip, and a lock
+  screen when the trial is spent.
+- **Conversion keeps everything**: signing up mid-trial transfers the guest's
+  conversations into the new account, then retires the guest identity and its
+  sessions (`POST /auth/register` with `guest_token`).
+- Guests are sandboxed in their own organization; account-management endpoints
+  (`/settings/password`, sessions, profile, delete-account, …) reject guests.
+- Toggle the whole feature with `JAT_GUEST_ENABLED`; cap open conversations
+  with `JAT_GUEST_MAX_CONVERSATIONS`.
+- A DB-free demo harness (`node mock-api.mjs`) serves the web app with an
+  in-memory guest quota so the flow can be walked without Postgres/Redis/Ollama.
+
 ## Architecture
 
 ```text

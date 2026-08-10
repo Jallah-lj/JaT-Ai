@@ -15,6 +15,7 @@ from jat_api.auth.dependencies import current_user, get_db_session
 from jat_api.conversations import organization_for_user
 from jat_api.db.models import Conversation, Message, MessagePart, User
 from jat_api.generations import finalize_generation
+from jat_api.guest import enforce_guest_quota
 from jat_api.knowledge_bases import owned as owned_knowledge_base
 from jat_api.models import ChatMessage, GenerationRequest, create_provider
 from jat_api.rag.retrieval import Citation, retrieve
@@ -223,6 +224,7 @@ async def chat(
     user: User = Depends(current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> ChatResponse:
+    await enforce_guest_quota(db, user, request.app.state.settings)
     conversation = await owned_conversation(db, user, payload.conversation_id)
     await maybe_auto_title(conversation, payload.content)
     citations = await retrieve_citations(request, db, user, payload)
@@ -274,6 +276,7 @@ async def chat_stream(
     user: User = Depends(current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> StreamingResponse:
+    await enforce_guest_quota(db, user, request.app.state.settings)
     conversation = await owned_conversation(db, user, payload.conversation_id)
     await maybe_auto_title(conversation, payload.content)
     citations = await retrieve_citations(request, db, user, payload)
@@ -361,6 +364,7 @@ async def retry_message(
     user: User = Depends(current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> ChatResponse:
+    await enforce_guest_quota(db, user, request.app.state.settings)
     original = await db.get(Message, message_id)
     if original is None or original.role != "assistant":
         raise HTTPException(status_code=404, detail="Assistant message not found")

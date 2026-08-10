@@ -5,7 +5,7 @@ import { SettingsPage } from "../src/app/settings/SettingsPage";
 import { DEFAULT_PREFERENCES, type Preferences, type User } from "../src/lib/api";
 import { applyPreferences, readCachedPreferences, cachePreferences } from "../src/lib/preferences";
 
-const user: User = { id: "u1", email: "ada@example.com", display_name: "Ada Lovelace" };
+const user: User = { id: "u1", email: "ada@example.com", display_name: "Ada Lovelace", kind: "person" };
 
 function mockJson(body: unknown, status = 200): Response {
   return {

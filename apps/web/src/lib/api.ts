@@ -1,10 +1,10 @@
-export type User = { id: string; email: string; display_name: string };
+export type User = { id: string; email: string; display_name: string; kind: "person" | "guest" };
 export type AuthSession = { access_token: string; token_type: "bearer"; user: User };
 
 type ValidationIssue = { msg?: string; loc?: (string | number)[] };
-type ApiProblem = { detail?: string | ValidationIssue[]; title?: string };
+type ApiProblem = { detail?: string | ValidationIssue[] | Record<string, unknown>; title?: string; code?: string };
 
-/** FastAPI returns `detail` as a string for HTTPException and an array for validation errors. */
+/** FastAPI returns `detail` as a string for HTTPException, an array for validation errors. */
 function problemMessage(problem: ApiProblem): string | undefined {
   const { detail } = problem;
   if (typeof detail === "string") return detail;
@@ -13,11 +13,20 @@ function problemMessage(problem: ApiProblem): string | undefined {
     const field = issue.loc?.filter((part) => part !== "body").join(".");
     return field ? `${field}: ${issue.msg ?? "is invalid"}` : issue.msg;
   }
+  if (detail && typeof detail === "object" && "detail" in detail) {
+    const nested = (detail as { detail?: unknown }).detail;
+    if (typeof nested === "string") return nested;
+  }
   return problem.title;
 }
 
 export class ApiError extends Error {
-  constructor(message: string, readonly status: number) {
+  constructor(
+    message: string,
+    readonly status: number,
+    /** Machine-readable code from the API problem envelope (e.g. "guest_limit_reached"). */
+    readonly code?: string,
+  ) {
     super(message);
   }
 }
@@ -30,7 +39,13 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   });
   if (!response.ok) {
     const problem = (await response.json().catch(() => ({}))) as ApiProblem;
-    throw new ApiError(problemMessage(problem) ?? "Request failed", response.status);
+    const code =
+      typeof problem.code === "string"
+        ? problem.code
+        : problem.detail && typeof problem.detail === "object" && !Array.isArray(problem.detail)
+          ? ((problem.detail as { code?: unknown }).code as string | undefined)
+          : undefined;
+    throw new ApiError(problemMessage(problem) ?? "Request failed", response.status, code);
   }
   if (response.status === 204 || response.headers.get("content-length") === "0") {
     return undefined as T;
@@ -269,8 +284,25 @@ export const integrationsApi = {
     authorized<IntegrationActionResult>(`/integrations/${provider}`, token, { method: "DELETE" }),
 };
 
+/** Trial-budget snapshot surfaced by the guest banner and sign-up prompts. */
+export type GuestStatus = {
+  enabled: boolean;
+  kind: "anonymous" | "guest" | "person";
+  message_limit: number;
+  messages_used: number;
+  conversation_limit: number;
+  conversations: number;
+  expires_at: string | null;
+};
+
 export const authApi = {
-  register: (payload: { email: string; password: string; display_name: string }) =>
+  register: (payload: {
+    email: string;
+    password: string;
+    display_name: string;
+    /** Access token of the guest session whose chats should carry over. */
+    guest_token?: string;
+  }) =>
     request<AuthSession>("/auth/register", { method: "POST", body: JSON.stringify(payload) }),
   login: (payload: { email: string; password: string }) =>
     request<AuthSession>("/auth/login", { method: "POST", body: JSON.stringify(payload) }),
@@ -278,4 +310,11 @@ export const authApi = {
   me: (token: string) =>
     request<User>("/auth/me", { headers: { Authorization: `Bearer ${token}` } }),
   logout: () => request<void>("/auth/logout", { method: "POST" }),
+  /** Start an anonymous trial session — no email, no password. */
+  guest: () => request<AuthSession>("/auth/guest", { method: "POST" }),
+  guestStatus: (token?: string) =>
+    request<GuestStatus>(
+      "/auth/guest/status",
+      token ? { headers: { Authorization: `Bearer ${token}` } } : undefined,
+    ),
 };
