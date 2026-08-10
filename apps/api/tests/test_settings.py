@@ -1,9 +1,11 @@
 """Contract tests for the settings boundary that do not require a database."""
 
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
-from jat_api.config import Settings
+from jat_api.config import Settings, _ENV_FILE_CANDIDATES
 from jat_api.settings.schemas import (
     MAX_MEMORIES,
     AccountDeletion,
@@ -116,6 +118,10 @@ def test_cors_origins_accept_comma_separated_and_json_forms() -> None:
     assert comma.cors_origins == ["http://a.test", "http://b.test"]
     json_form = Settings(environment="testing", cors_origins='["http://c.test"]')
     assert json_form.cors_origins == ["http://c.test"]
+
+
+def test_env_candidates_include_the_repository_root_env_file() -> None:
+    assert _ENV_FILE_CANDIDATES[-1].resolve() == Path(__file__).resolve().parents[3] / ".env"
 
 
 def test_model_endpoint_rejects_markdown_link_formatting() -> None:

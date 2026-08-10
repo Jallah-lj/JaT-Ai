@@ -10,17 +10,18 @@ from urllib.parse import urlparse
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
-# Allow .env in either the working directory or the repository root (two levels
-# up from this file) so that `python -m uvicorn jat_api.main:app` works whether it
-# is run from apps/api/ or from the repo root. Explicit environment variables
-# always take precedence over files; the first file that exists wins among the
-# list (env values are not overridden by later files).
+# Allow .env in either the working directory or the repository root so that
+# `python -m uvicorn jat_api.main:app` works whether it is run from apps/api/
+# or from the repository root. Explicit environment variables always take
+# precedence over files; the first file that exists wins among the list (env
+# values are not overridden by later files).
 _THIS_DIR = Path(__file__).resolve().parent
+_REPOSITORY_ROOT = _THIS_DIR.parents[3]
 _ENV_FILE_CANDIDATES = (
     Path(".env"),
     _THIS_DIR / ".env",  # apps/api/jat_api/.env (unlikely)
     _THIS_DIR.parent.parent / ".env",  # apps/api/.env
-    _THIS_DIR.parent.parent.parent / ".env",  # repo-root .env (per README)
+    _REPOSITORY_ROOT / ".env",  # repository-root .env (per README)
 )
 _ENV_FILES = tuple(str(p) for p in _ENV_FILE_CANDIDATES if p.exists())
 
