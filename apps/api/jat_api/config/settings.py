@@ -53,16 +53,18 @@ class Settings(BaseSettings):
     auth_rate_limit_attempts: int = Field(default=10, ge=1, le=100)
     auth_rate_limit_window_seconds: int = Field(default=60, ge=1, le=3600)
     service_version: str = "0.1.0"
-    model_provider: str = "deterministic"
-    model_name: str = "jat-development"
-    model_endpoint: str | None = None
+    model_provider: str = "ollama"
+    model_name: str = "llama3.1:latest"
+    model_endpoint: str | None = "http://127.0.0.1:11434"
     model_context_length: int = Field(default=8192, ge=256, le=1_000_000)
     model_max_tokens: int = Field(default=1024, ge=1, le=16384)
     model_temperature: float = Field(default=0.2, ge=0.0, le=2.0)
     # Operator-level baseline persona used only when a user has no system prompt of their own.
     default_system_prompt: str = ""
     # Phase 3: governed ingestion and retrieval.
-    embedding_provider: str = "deterministic"
+    embedding_provider: str = "ollama"
+    embedding_model: str = "nomic-embed-text"
+    embedding_endpoint: str | None = "http://127.0.0.1:11434"
     object_store_dir: str = ".jat-data/objects"
     ingestion_dispatcher: Literal["inline", "redis", "local"] = "inline"
     ingestion_queue: str = "jat:ingestion"

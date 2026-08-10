@@ -63,7 +63,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.database = Database(active_settings.database_url)
         app.state.redis = RedisClient(active_settings.redis_url)
         app.state.object_store = LocalObjectStore.for_settings(active_settings)
-        app.state.embedding_provider = create_embedding_provider(active_settings.embedding_provider)
+        app.state.embedding_provider = create_embedding_provider(
+            active_settings.embedding_provider,
+            endpoint=getattr(active_settings, "embedding_endpoint", None)
+            or active_settings.model_endpoint,
+            model=getattr(active_settings, "embedding_model", None),
+        )
 
         async def run_ingestion_job(job: IngestionJob) -> None:
             await process_ingestion_job(
