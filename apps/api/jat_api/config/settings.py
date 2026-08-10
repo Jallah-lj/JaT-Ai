@@ -3,16 +3,37 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Annotated, Literal
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
+# Allow .env in either the working directory or the repository root (two levels
+# up from this file) so that `python -m uvicorn jat_api.main:app` works whether it
+# is run from apps/api/ or from the repo root. Explicit environment variables
+# always take precedence over files; the first file that exists wins among the
+# list (env values are not overridden by later files).
+_THIS_DIR = Path(__file__).resolve().parent
+_ENV_FILE_CANDIDATES = (
+    Path(".env"),
+    _THIS_DIR / ".env",                     # apps/api/jat_api/.env (unlikely)
+    _THIS_DIR.parent.parent / ".env",       # apps/api/.env
+    _THIS_DIR.parent.parent.parent / ".env",  # repo-root .env (per README)
+)
+_ENV_FILES = tuple(str(p) for p in _ENV_FILE_CANDIDATES if p.exists())
+
+
 class Settings(BaseSettings):
     """Settings validated before JaT accepts requests."""
 
-    model_config = SettingsConfigDict(env_file=".env", env_prefix="JAT_", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=_ENV_FILES,
+        env_file_encoding="utf-8",
+        env_prefix="JAT_",
+        extra="ignore",
+    )
 
     environment: Literal["development", "testing", "staging", "production"] = "development"
     log_level: str = "INFO"
