@@ -290,6 +290,7 @@ function Workspace({
   const [searchQuery, setSearchQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [menuFor, setMenuFor] = useState<string | null>(null);
+  const [menuFlipUp, setMenuFlipUp] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [attachments, setAttachments] = useState<AttachedFile[]>([]);
@@ -298,7 +299,7 @@ function Workspace({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const messageEndRef = useRef<HTMLDivElement>(null);
+  const messageListRef = useRef<HTMLDivElement>(null);
 
   const refreshConversations = useCallback(async (): Promise<Conversation[]> => {
     const items = await conversationApi.list(token);
@@ -342,7 +343,11 @@ function Workspace({
   }, [active, token]);
 
   useEffect(() => {
-    messageEndRef.current?.scrollIntoView({ behavior: preferences.reduced_motion ? "auto" : "smooth" });
+    // Scroll only the message list, never the surrounding page, so the header,
+    // sidebar, and composer stay pinned while the conversation moves.
+    const list = messageListRef.current;
+    if (!list) return;
+    list.scrollTo({ top: list.scrollHeight, behavior: preferences.reduced_motion ? "auto" : "smooth" });
   }, [messages, preferences.reduced_motion]);
 
   useEffect(() => {
@@ -563,7 +568,11 @@ function Workspace({
     } finally {
       setSending(false);
       setStreamController(null);
-      composerRef.current?.focus();
+      const composer = composerRef.current;
+      if (composer) {
+        composer.style.height = "auto";
+        composer.focus();
+      }
     }
   }
 
@@ -707,15 +716,33 @@ function Workspace({
                     aria-expanded={menuFor === conversation.id}
                     onClick={(event) => {
                       event.stopPropagation();
-                      setMenuFor((current) =>
-                        current === conversation.id ? null : conversation.id,
-                      );
+                      const isOpen = menuFor === conversation.id;
+                      if (!isOpen) {
+                        // The nav list scrolls; open the menu upward when it would
+                        // otherwise be clipped below the visible nav area.
+                        const navBox = event.currentTarget
+                          .closest("nav")
+                          ?.getBoundingClientRect();
+                        const buttonBox = event.currentTarget.getBoundingClientRect();
+                        const menuHeight = 96;
+                        setMenuFlipUp(
+                          Boolean(
+                            navBox &&
+                              buttonBox.bottom + menuHeight > navBox.bottom &&
+                              buttonBox.top - menuHeight >= navBox.top,
+                          ),
+                        );
+                      }
+                      setMenuFor(isOpen ? null : conversation.id);
                     }}
                   >
                     ⋯
                   </button>
                   {menuFor === conversation.id && (
-                    <div className="chat-context-menu" role="menu">
+                    <div
+                      className={`chat-context-menu ${menuFlipUp ? "flip-up" : ""}`}
+                      role="menu"
+                    >
                       <button
                         type="button"
                         role="menuitem"
@@ -808,7 +835,7 @@ function Workspace({
           </div>
         </header>
 
-        <div className={messages.length ? "message-list" : "empty-chat"}>
+        <div ref={messageListRef} className={messages.length ? "message-list" : "empty-chat"}>
           {messages.length ? (
             <>
               {messages.map((message, index) => (
@@ -859,7 +886,6 @@ function Workspace({
                   </div>
                 </article>
               ))}
-              <div ref={messageEndRef} />
             </>
           ) : (
             <>
