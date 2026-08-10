@@ -5,7 +5,7 @@ services:
     environment:
       POSTGRES_DB: jat
       POSTGRES_USER: jat
-      POSTGRES_PASSWORD: jat_dev_password # Development only; override outside local use.
+      POSTGRES_PASSWORD: 20064 # Development only; override outside local use.
     ports: ["5432:5432"]
     volumes: ["jat_postgres:/var/lib/postgresql/data"]
     healthcheck:

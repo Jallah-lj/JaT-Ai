@@ -52,8 +52,8 @@ Replace the `backend` job with:
 
 ```bash
 docker compose up -d postgres redis
-cd apps/api && JAT_DATABASE_URL=postgresql+asyncpg://jat:jat_dev_password@localhost:5432/jat \
+cd apps/api && JAT_DATABASE_URL=postgresql+asyncpg://jat:20064@localhost:5432/jat \
   python -m alembic upgrade head
-JAT_TEST_DATABASE_URL=postgresql+asyncpg://jat:jat_dev_password@localhost:5432/jat \
+JAT_TEST_DATABASE_URL=postgresql+asyncpg://jat:20064@localhost:5432/jat \
   python -m pytest apps/api/tests
 ```

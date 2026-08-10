@@ -50,9 +50,7 @@ def _status(response: Any) -> int:
 
 async def test_regular_routes_keep_the_narrow_limit() -> None:
     middleware = _middleware()
-    rejected = await middleware.dispatch(
-        _request("/api/v1/chat", 2_000_000), _ok
-    )
+    rejected = await middleware.dispatch(_request("/api/v1/chat", 2_000_000), _ok)
     assert _status(rejected) == 413
     accepted = await middleware.dispatch(_request("/api/v1/chat", 999_000), _ok)
     assert _status(accepted) == 200
