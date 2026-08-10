@@ -31,6 +31,33 @@ JAT_MODEL_ENDPOINT=http://127.0.0.1:11434
 JAT_MODEL_NAME=<your-installed-model>
 ```
 
+#### Pre-wiring smoke test
+
+Before pointing JaT at Ollama, confirm the server and model respond in
+character by talking to the model directly:
+
+```bash
+ollama run llama3.1
+```
+
+```text
+>>> Hello. You are JaT. Introduce yourself briefly.
+```
+
+A live run (Kali Linux, Ollama + `llama3.1`) produced:
+
+```text
+*waves* I'm JaT, a galactic being from the Andromeda galaxy. My name is an
+acronym for "Just Another Traveler". It's nice to meet you! *smiles* What
+brings you here?
+```
+
+If the model answers in character here, the model side of the stack works and
+any remaining problem is in JaT's configuration (endpoint URL, model name, or
+provider selection). The tone you see is a product of the prompt you give —
+the starter persona in [Training your JaT agent](TRAINING_GUIDE.md) yields a
+more restrained style.
+
 When an endpoint is configured, `GET /api/v1/settings/models` enumerates the
 models actually installed on the Ollama server (via `/api/tags`) so each
 conversation can select a real model. Discovery is best-effort: if Ollama is

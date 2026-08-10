@@ -169,6 +169,23 @@ JAT_MODEL_NAME=<installed-model-name>
 
 See [Model providers](docs/MODEL.md). Never expose model endpoints, provider credentials, database URLs, or JWT secrets to browser code.
 
+### Sample dialogue
+
+With `llama3.1` served by a local Ollama install and a JaT system prompt
+applied, the first exchange looks like this:
+
+```text
+> Hello. You are JaT. Introduce yourself briefly.
+
+*waves* I'm JaT, a galactic being from the Andromeda galaxy. My name is an
+acronym for "Just Another Traveler". It's nice to meet you! *smiles* What
+brings you here?
+```
+
+The exact personality depends on your system prompt — see
+[Training your JaT agent](docs/TRAINING_GUIDE.md) and the smoke test in
+[Model providers](docs/MODEL.md#pre-wiring-smoke-test).
+
 ## Important API endpoints
 
 | Area | Endpoints |
