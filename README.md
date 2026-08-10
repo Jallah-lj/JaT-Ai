@@ -112,6 +112,12 @@ Start PostgreSQL and Redis:
 docker compose up -d postgres redis
 ```
 
+> `JAT_DATABASE_URL` and `JAT_REDIS_URL` in `.env` must use `localhost` (the shipped
+> `.env.example` already does). The `postgres`/`redis` names in `docker-compose.yml`
+> only resolve inside the Compose network; `make api-migrate` and the dev server run
+> on the host, where Compose publishes both services on `localhost`. The credentials
+> must also match `POSTGRES_USER`/`POSTGRES_PASSWORD` in `docker-compose.yml`.
+
 Apply migrations:
 
 ```bash
