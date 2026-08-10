@@ -169,9 +169,12 @@ async def test_in_memory_store_filters_and_ranks() -> None:
     assert len(hits) == 2  # other org and other embedding model excluded
 
     await store.delete(doc)
-    assert await store.search(
-        [1.0, 0.0], limit=5, filters={"organization_id": str(org_a), "embedding_model": "m1"}
-    ) == []
+    assert (
+        await store.search(
+            [1.0, 0.0], limit=5, filters={"organization_id": str(org_a), "embedding_model": "m1"}
+        )
+        == []
+    )
 
 
 async def test_in_memory_store_fails_closed_on_filters() -> None:

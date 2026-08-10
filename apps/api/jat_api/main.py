@@ -96,7 +96,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if failed:
             parts = ", ".join(f"{p.name}={p.detail or 'unreachable'}" for p in failed)
             if active_settings.environment in {"staging", "production"}:
-                log.error("backing_services_unavailable", services=parts, env=active_settings.environment)
+                log.error(
+                    "backing_services_unavailable",
+                    services=parts,
+                    env=active_settings.environment,
+                )
                 # Close what we opened before raising.
                 await app.state.redis.close()
                 await app.state.database.close()
@@ -156,7 +160,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # overriding the default HTTP/validation handlers so OpenAPI, 422, and
     # explicit HTTPException responses keep their documented shape.
     @app.exception_handler(Exception)
-    async def _unhandled_exception_handler(request: Request, exc: Exception) -> Response:  # noqa: D401
+    async def _unhandled_exception_handler(request: Request, exc: Exception) -> Response:
         # FastAPI/Starlette HTTPException and RequestValidationError are handled
         # by the framework's default handlers; re-raising from a custom handler
         # would not invoke them, so pass through known cases explicitly.
@@ -164,7 +168,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return JSONResponse(
                 status_code=exc.status_code,
                 headers=getattr(exc, "headers", None),
-                content={"detail": exc.detail if isinstance(exc.detail, str) else exc.detail},
+                content={"detail": exc.detail},
             )
         if isinstance(exc, RequestValidationError):
             return JSONResponse(

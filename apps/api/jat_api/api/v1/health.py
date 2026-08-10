@@ -1,6 +1,6 @@
 """Liveness and readiness endpoints."""
 
-from typing import Any, Literal
+from typing import Literal
 
 from fastapi import APIRouter, Request, Response, status
 from pydantic import BaseModel

@@ -26,8 +26,7 @@ def _load_dotenv_file(path: Path) -> None:
                 key = key.strip()
                 value = value.strip()
                 if len(value) >= 2 and (
-                    (value[0] == '"' and value[-1] == '"')
-                    or (value[0] == "'" and value[-1] == "'")
+                    (value[0] == '"' and value[-1] == '"') or (value[0] == "'" and value[-1] == "'")
                 ):
                     value = value[1:-1]
                 if key and key not in os.environ:
