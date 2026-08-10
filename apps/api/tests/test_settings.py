@@ -118,6 +118,21 @@ def test_cors_origins_accept_comma_separated_and_json_forms() -> None:
     assert json_form.cors_origins == ["http://c.test"]
 
 
+def test_model_endpoint_rejects_markdown_link_formatting() -> None:
+    with pytest.raises(ValidationError, match="plain http"):
+        Settings(model_endpoint="[http://127.0.0.1:11434](http://127.0.0.1:11434)")
+
+
+def test_cors_origins_reject_markdown_link_formatting() -> None:
+    with pytest.raises(ValidationError, match="plain http"):
+        Settings(cors_origins='["[http://localhost:5173](http://localhost:5173)"]')
+
+
+def test_ollama_requires_an_endpoint() -> None:
+    with pytest.raises(ValidationError, match="JAT_MODEL_ENDPOINT is required"):
+        Settings(model_provider="ollama", model_endpoint=None)
+
+
 def test_chat_title_helper_truncates_cleanly() -> None:
     from jat_api.chat import title_from_content
 

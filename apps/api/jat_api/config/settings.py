@@ -5,6 +5,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Literal
+from urllib.parse import urlparse
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -72,6 +73,21 @@ class Settings(BaseSettings):
     rag_search_limit: int = Field(default=8, ge=1, le=50)
     rag_max_citations: int = Field(default=5, ge=0, le=20)
 
+    @field_validator("model_endpoint")
+    @classmethod
+    def validate_model_endpoint(cls, value: str | None) -> str | None:
+        """Reject copy/pasted Markdown links before a provider fails at request time."""
+        if value is None:
+            return None
+        endpoint = value.strip()
+        parsed = urlparse(endpoint)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError(
+                "JAT_MODEL_ENDPOINT must be a plain http(s) URL, for example "
+                "http://127.0.0.1:11434 (do not paste Markdown [text](url) formatting)"
+            )
+        return endpoint.rstrip("/")
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def parse_origins(cls, value: object) -> object:
@@ -88,8 +104,23 @@ class Settings(BaseSettings):
             return [origin.strip() for origin in text.split(",") if origin.strip()]
         return value
 
+    @field_validator("cors_origins")
+    @classmethod
+    def validate_origins(cls, origins: list[str]) -> list[str]:
+        """Fail clearly when a browser origin was pasted as a Markdown link."""
+        for origin in origins:
+            parsed = urlparse(origin)
+            if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+                raise ValueError(
+                    "JAT_CORS_ORIGINS entries must be plain http(s) origins, for example "
+                    "http://localhost:5173 (do not paste Markdown [text](url) formatting)"
+                )
+        return origins
+
     @model_validator(mode="after")
     def secure_deployment_settings(self) -> Settings:
+        if self.model_provider == "ollama" and not self.model_endpoint:
+            raise ValueError("JAT_MODEL_ENDPOINT is required when JAT_MODEL_PROVIDER=ollama")
         if self.rag_chunk_overlap >= self.rag_chunk_max_chars:
             raise ValueError("JAT_RAG_CHUNK_OVERLAP must be smaller than JAT_RAG_CHUNK_MAX_CHARS")
         secret = self.jwt_secret.get_secret_value()

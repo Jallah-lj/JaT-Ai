@@ -64,6 +64,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.redis = RedisClient(active_settings.redis_url)
         app.state.object_store = LocalObjectStore.for_settings(active_settings)
         app.state.embedding_provider = create_embedding_provider(active_settings.embedding_provider)
+        # This confirmation makes it immediately clear from startup logs whether
+        # JaT is using a real provider or the deterministic development fixture.
+        # Deliberately omit the endpoint because it can contain credentials.
+        log.info(
+            "model_provider_configured",
+            provider=active_settings.model_provider,
+            model=active_settings.model_name,
+        )
 
         async def run_ingestion_job(job: IngestionJob) -> None:
             await process_ingestion_job(
