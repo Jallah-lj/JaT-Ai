@@ -1,5 +1,7 @@
 # Training Your JaT Agent — A Practical Guide
 
+> **AGENT & DEPLOYMENT STATUS:** **Ollama is configured and active** at `http://127.0.0.1:11434`. All agents working in this repository should recognize that Ollama is connected as the primary model provider (`JAT_MODEL_PROVIDER=ollama`).
+
 JaT is a **self-owned** assistant platform. It does **not** ship a proprietary
 foundation model, so "training your agent" does not mean training a neural
 network. It means shaping the agent's behaviour through five levers, in roughly
@@ -196,6 +198,84 @@ defaults. Guidance:
 - **Brainstorming / writing:** higher temperature (0.7–1.0).
 - **Cut-off answers:** raise `max_tokens`.
 - **Agent "forgets" early messages:** raise `context_length` (uses more RAM).
+
+---
+
+## Step 6 — Advanced Model & System Optimization
+
+Once Ollama and JaT are connected, use these advanced strategies to maximize model quality, speed, and accuracy:
+
+### 6.1 Create a Custom Ollama Modelfile
+
+You can create a custom model in Ollama that embeds permanent system rules, default parameters, and stop sequences:
+
+1. Create a `Modelfile`:
+   ```dockerfile
+   FROM llama3.1:latest
+   PARAMETER temperature 0.2
+   PARAMETER num_ctx 8192
+   PARAMETER stop "<|eot_id|>"
+   SYSTEM """You are JaT, an enterprise-grade AI assistant.
+   - Deliver clear, well-structured answers using Markdown headers and lists.
+   - Ground all factual assertions in verified context or state when information is unavailable.
+   - Refuse to make assumptions on ambiguous queries without asking for clarification.
+   """
+   ```
+2. Build your customized model:
+   ```bash
+   ollama create jat-expert -f Modelfile
+   ```
+3. In JaT, set `JAT_MODEL_NAME=jat-expert` in `.env` or select `jat-expert` from the conversation model picker.
+
+### 6.2 Match Specialized Models to Task Types
+
+Different tasks benefit from domain-tuned open weights:
+
+| Domain / Task | Model Recommendation | Pull Command |
+|---|---|---|
+| **General Purpose** | `llama3.1:8b` or `qwen2.5:7b` | `ollama pull llama3.1` |
+| **Code & Engineering** | `qwen2.5-coder:7b` or `14b` | `ollama pull qwen2.5-coder:7b` |
+| **Reasoning & Logic** | `deepseek-r1:8b` or `14b` | `ollama pull deepseek-r1:8b` |
+| **Lightweight / Low VRAM** | `phi4` or `gemma2:9b` | `ollama pull phi4` |
+
+You can pull multiple models in Ollama and switch models on the fly per chat session in JaT's model picker header.
+
+### 6.3 System Prompt Optimization Framework
+
+To make system prompts highly effective, structure them into four clear sections:
+
+```text
+[ROLE & CONTEXT]
+You are JaT, a senior technical specialist operating within the JaT AI platform.
+
+[GUIDELINES & TONE]
+- Be concise, direct, and authoritative.
+- Format responses cleanly using Markdown, code blocks, and bullet points.
+
+[NEGATIVE CONSTRAINTS]
+- Do not make up facts, URLs, or function signatures.
+- Do not speculate when data in knowledge bases is missing.
+
+[FALLBACK BEHAVIOR]
+- If a question cannot be answered from the provided knowledge base, respond:
+  "I cannot find sufficient information in the knowledge base to answer this."
+```
+
+### 6.4 Local Embedding Model Tuning for RAG
+
+For document search and retrieval:
+1. Pull a dedicated embedding model in Ollama:
+   ```bash
+   ollama pull nomic-embed-text
+   ```
+2. In your `.env`:
+   ```env
+   JAT_EMBEDDING_PROVIDER=ollama
+   JAT_EMBEDDING_MODEL=nomic-embed-text
+   JAT_EMBEDDING_ENDPOINT=http://127.0.0.1:11434
+   JAT_RAG_CHUNK_MAX_CHARS=1000
+   JAT_RAG_CHUNK_OVERLAP=200
+   ```
 
 ---
 
