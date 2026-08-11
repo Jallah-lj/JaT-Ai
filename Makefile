@@ -1,4 +1,18 @@
-.PHONY: dev-up dev-down dev-reset api-migrate api-install api-format api-lint api-type api-test web-install web-lint web-type web-test web-build verify
+.PHONY: dev-up dev-down dev-reset api-migrate api-install api-format api-lint api-type api-test web-install web-lint web-type web-test web-build verify ollama-setup
+
+# ---- Ollama model setup ----------------------------------------------------
+ollama-setup:
+	@if ! command -v ollama >/dev/null 2>&1; then \
+		echo "error: ollama is not installed or not in PATH. Please install from https://ollama.com" >&2; \
+		exit 1; \
+	fi
+	@echo "==> Pulling base model llama3.1:latest..."
+	ollama pull llama3.1:latest
+	@echo "==> Building custom model jat-expert from Modelfile..."
+	ollama create jat-expert -f Modelfile
+	@echo "==> Pulling RAG embedding model nomic-embed-text..."
+	ollama pull nomic-embed-text
+	@echo "==> Ollama setup complete! Model 'jat-expert' is ready."
 
 # ---- Local development bootstrapping --------------------------------------
 # These targets require Docker. They start Postgres and Redis with credentials

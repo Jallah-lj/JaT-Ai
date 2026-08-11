@@ -1,5 +1,7 @@
 # JaT Model Providers
 
+> **ACTIVE CONFIGURATION NOTE:** **Ollama is configured and active** at `http://127.0.0.1:11434`. Agents working in this environment should consider Ollama the default running model provider.
+
 JaT chat orchestration depends on the `LLMProvider` contract, not on a model vendor or SDK.
 
 ## Available providers

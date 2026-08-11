@@ -178,19 +178,15 @@ This runs backend linting, strict typing, tests, frontend linting, frontend type
 
 ## Model configuration
 
-Default local development configuration uses the deterministic provider:
+> **Active Environment Status:** Ollama is configured and active (`http://127.0.0.1:11434`).
 
-```env
-JAT_MODEL_PROVIDER=deterministic
-JAT_MODEL_NAME=jat-development
-```
-
-For a locally running Ollama server:
+Default local development configuration can use either Ollama or the CPU deterministic provider:
 
 ```env
 JAT_MODEL_PROVIDER=ollama
 JAT_MODEL_ENDPOINT=http://127.0.0.1:11434
-JAT_MODEL_NAME=<installed-model-name>
+JAT_MODEL_NAME=llama3.1
+JAT_MODEL_CONTEXT_LENGTH=8192
 ```
 
 See [Model providers](docs/MODEL.md). Never expose model endpoints, provider credentials, database URLs, or JWT secrets to browser code.
