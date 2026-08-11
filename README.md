@@ -59,6 +59,10 @@ What Phase 3 still lacks: PDF/JSON/CSV and binary parsers, at-least-once queue s
 - search chats, delete chats, and open a per-chat options menu
 - attach files from the composer (text contents inlined into the prompt when readable)
 - working send control (↑) with clear ready/disabled states and stop-while-streaming
+- rich model picker in the chat header — searchable, grouped by provider, showing
+  context window, description, and availability, with a shortcut into Settings → Chat
+- Settings → Chat lists the model catalog grouped by provider with context windows,
+  descriptions, and availability for the default-model choice
 
 ### Guest (trial) access — try the LLM before signing up
 

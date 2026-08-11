@@ -23,6 +23,7 @@ import {
   type User,
 } from "../lib/api";
 import { SettingsPage } from "./settings/SettingsPage";
+import { ModelPicker } from "./ModelPicker";
 import { applyPreferences, cachePreferences, readCachedPreferences } from "../lib/preferences";
 import logoUrl from "../assets/logo.svg";
 import "../styles/app.css";
@@ -300,7 +301,7 @@ function AuthScreen({
                   <strong>{guestStarting ? "Starting your trial…" : "Try JaT free — no account"}</strong>
                   <small>
                     {trialLimit > 0
-                      ? `${trialLimit} free messages · chats can be saved when you sign up`
+                      ? `${trialLimit} free messages · chats can be saved`
                       : "No email, no password — just the LLM"}
                   </small>
                 </span>
@@ -967,25 +968,13 @@ function Workspace({
                 ⌫
               </button>
             )}
-            <select
-              className="model-pill"
-              aria-label="Conversation model"
-              title="Switch the model for this chat"
+            <ModelPicker
+              models={modelOptions}
               value={activeModel}
               disabled={!active}
-              onChange={(event) => void changeModel(event.target.value)}
-            >
-              {modelOptions.length === 0 ? (
-                <option value={activeModel}>{active?.model ?? "JaT development"}</option>
-              ) : (
-                modelOptions.map((option) => (
-                  <option key={option.id} value={option.id} disabled={!option.available}>
-                    {option.label}
-                    {option.available ? "" : " (unavailable)"}
-                  </option>
-                ))
-              )}
-            </select>
+              onChange={(modelId) => void changeModel(modelId)}
+              onManageModels={() => openSettings("chat")}
+            />
           </div>
         </header>
 

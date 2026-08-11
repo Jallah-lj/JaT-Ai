@@ -18,6 +18,7 @@ import {
   type User,
 } from "../../lib/api";
 import { Row, SegmentedControl, Section, Toggle } from "./fields";
+import { formatContextLength, providerLabel } from "../ModelPicker";
 
 type TabId = "general" | "appearance" | "chat" | "memory" | "integrations" | "account" | "data";
 
@@ -437,6 +438,29 @@ function ChatTab({
 
   const promptDirty = prompt !== preferences.system_prompt;
 
+  // Group the catalog by provider so the dropdown reads as a real list of
+  // options rather than a flat wall of similar-sounding names.
+  const modelGroups = useMemo(() => {
+    const byProvider = new Map<string, ModelOption[]>();
+    for (const model of models) {
+      const bucket = byProvider.get(model.provider) ?? [];
+      bucket.push(model);
+      byProvider.set(model.provider, bucket);
+    }
+    return [...byProvider.entries()]
+      .map(([provider, items]) => ({
+        provider,
+        items: [...items].sort(
+          (a, b) =>
+            Number(b.available) - Number(a.available) ||
+            a.label.localeCompare(b.label),
+        ),
+      }))
+      .sort((a, b) => a.provider.localeCompare(b.provider));
+  }, [models]);
+
+  const selectedModel = models.find((model) => model.id === preferences.default_model);
+
   return (
     <>
       <Section title="Model" description="Provider-neutral selection served by the API.">
@@ -447,16 +471,27 @@ function ChatTab({
             onChange={(event) => void persist({ default_model: event.target.value })}
           >
             {models.length === 0 && <option value={preferences.default_model}>Loading…</option>}
-            {models.map((model) => (
-              <option key={model.id} value={model.id} disabled={!model.available}>
-                {model.label}
-                {model.available ? "" : " (unavailable)"}
-              </option>
+            {modelGroups.map((group) => (
+              <optgroup key={group.provider} label={providerLabel(group.provider)}>
+                {group.items.map((model) => (
+                  <option key={model.id} value={model.id} disabled={!model.available}>
+                    {model.label}
+                    {model.available ? "" : " (unavailable)"}
+                    {model.context_length > 0
+                      ? ` · ${formatContextLength(model.context_length)} ctx`
+                      : ""}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
-          {models.find((model) => model.id === preferences.default_model)?.description && (
+          {selectedModel && (
             <p className="field-hint">
-              {models.find((model) => model.id === preferences.default_model)?.description}
+              {selectedModel.description}
+              {selectedModel.context_length > 0 &&
+                ` · ${selectedModel.context_length.toLocaleString()} token context`}
+              {` · ${providerLabel(selectedModel.provider)}`}
+              {` · ${selectedModel.available ? "Available" : "Unavailable"}`}
             </p>
           )}
         </Row>
