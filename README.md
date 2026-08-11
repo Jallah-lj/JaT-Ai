@@ -119,7 +119,7 @@ docs/            Architecture, security, API, model, RAG, deployment guides
 ## Local setup
 
 ```bash
-git clone <your-repository-url> jat
+git clone https://github.com/Jallah-lj/JaT-Ai.git
 cd jat
 cp .env.example .env
 make api-install
